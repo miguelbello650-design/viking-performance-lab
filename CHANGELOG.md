@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-07-28
+- Publicado el repositorio en GitHub sin SQLite ni archivos FIT personales; reforzado `.gitignore` para excluir datos deportivos, GPS y credenciales.
 - Agregada superposicion dinamica de dos rutas GPS observadas con colores diferenciados.
 - Agregados tooltips interactivos por segmento con altitud GPS observada inicial y final.
 - Agregada colorizacion dinamica de la ruta por altitud GPS observada y leyenda del rango de elevacion.

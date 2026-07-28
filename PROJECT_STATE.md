@@ -4,6 +4,7 @@ La vista de actividades incorpora ruta GPS y perfil de altitud observados median
 Se corrigio la sincronizacion de la vista de detalle: la ruta ahora se inserta despues de cargar la actividad, evitando que el contenido del detalle la reemplace.
 El detalle individual ahora muestra un mapa OpenStreetMap con Leaflet, linea GPS observada y marcadores de inicio y final, sin API Key de Google.
 La ruta GPS ahora se colorea por tramos segun la altitud observada, con leyenda del rango minimo y maximo; no representa zonas deportivas ni una interpretacion.
+El repositorio GitHub fue publicado sin la base SQLite ni los archivos FIT personales; `.gitignore` excluye bases, archivos de actividad y credenciales para proteger la informacion deportiva y de ubicacion.
 Los tramos de altitud del mapa muestran al pasar el cursor la diferencia entre altitud observada inicial y final del segmento.
 La vista Actividades permite seleccionar dos actividades y superponer sus rutas GPS observadas en un mapa comparativo.
 
