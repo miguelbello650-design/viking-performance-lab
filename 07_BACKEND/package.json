@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.10.0"
+  }
+}

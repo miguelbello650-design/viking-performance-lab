@@ -1,0 +1,13 @@
+.env
+.venv/
+__pycache__/
+node_modules/
+dist/
+build/
+coverage/
+data/private/
+uploads/
+*.db
+*.db-shm
+*.db-wal
+09_DATOS_PRUEBA/importados/*.FIT.gz

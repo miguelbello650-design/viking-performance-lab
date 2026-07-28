@@ -1,0 +1,11 @@
+{
+  "project": "Viking Performance Lab",
+  "created": "2026-07-27",
+  "initial_sports": [
+    "trail_running",
+    "road_running",
+    "cycling"
+  ],
+  "phase": "product_definition",
+  "code_status": "not_started"
+}
