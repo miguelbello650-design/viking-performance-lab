@@ -1,5 +1,7 @@
 # Estado del proyecto
 
+Se incorpora como direccion aprobada el autoaprendizaje progresivo del atleta: perfil individual basado en patrones repetidos, confianza y validacion del entrenador. No se reentrena OpenAI automaticamente ni se presentan hipotesis como hechos.
+
 El contexto de análisis de actividad ahora incluye señales derivadas verificables: comparación del primer y último 20% de registros, cambios de velocidad, frecuencia cardíaca y cadencia, además de ascenso y descenso calculados desde la altitud observada. La IA debe convertirlas en hallazgos y preguntas útiles para el entrenador, no repetir el tablero.
 
 El informe generativo por actividad ya normaliza las capas devueltas por OpenAI para evitar `[object Object]`; el backend exige cálculos como textos verificables y declara cuando no son calculables. Pendiente publicar este ajuste y repetir una prueba real.

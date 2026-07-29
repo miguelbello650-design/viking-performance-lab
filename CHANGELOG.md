@@ -1,6 +1,9 @@
 # Changelog
 
 ## 2026-07-29
+- Definido el autoaprendizaje progresivo del atleta: acumulacion de patrones trazables, confianza y validacion del entrenador, sin reentrenamiento automatico del modelo ni diagnosticos.
+
+## 2026-07-29
 - Ampliado el contexto analítico del informe IA con cambios entre el primer y último 20% de registros, velocidad, FC, cadencia y ascenso/descenso derivados de datos observados. Ajustado el prompt para priorizar hallazgos accionables y trazables, no una repetición de métricas.
 
 ## 2026-07-29

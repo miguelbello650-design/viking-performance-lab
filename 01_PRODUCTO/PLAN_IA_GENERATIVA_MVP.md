@@ -4,6 +4,18 @@
 
 Usar la IA generativa como motor de lectura deportiva sobre la información observada de Strava y el historial normalizado de cada atleta. La IA no reemplaza al entrenador, no decide cambios de plan y no presenta hipótesis como hechos.
 
+## Autoaprendizaje progresivo del atleta
+
+En este proyecto, autoaprendizaje no significa reentrenar el modelo de OpenAI de forma automatica ni modificar sus reglas sin control. Significa construir y actualizar un perfil individual a partir de evidencia historica:
+
+1. **Observacion:** cada actividad aporta datos y senales derivadas verificables.
+2. **Patron repetido:** una conducta solo entra al perfil cuando aparece en actividades comparables suficientes.
+3. **Confianza:** cada patron conserva cantidad de evidencias, periodo, disciplina, condiciones disponibles y limitaciones.
+4. **Validacion del entrenador:** el entrenador puede confirmar, rechazar o corregir una hipotesis del perfil.
+5. **Personalizacion:** las respuestas futuras consultan el perfil validado, sin presentarlo como una verdad permanente.
+
+El perfil podra aprender, por ejemplo, respuesta ante calor, tolerancia a volumen, comportamiento en ascensos o recuperacion aparente, siempre que exista historial suficiente. Nunca debe inferir lesiones, diagnosticos ni causas no observadas. Los patrones no confirmados deben etiquetarse como hipotesis y poder auditarse hasta sus actividades de origen.
+
 ## Cadena obligatoria de respuesta
 
 Toda salida debe separar:
@@ -78,4 +90,3 @@ Agregar cumplimiento del plan, carga semanal y recuperación cuando exista una f
 ## Criterio de seguridad
 
 La IA generativa no debe ocultar datos faltantes, inventar clima, nutrición, sensaciones, zonas, carga, lesiones o causas. Toda recomendación debe indicar: **Sujeta a revisión del entrenador**.
-
