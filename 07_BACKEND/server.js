@@ -513,7 +513,8 @@ async function assistantQuery(query, history = [], activityId = null) {
   const comparisonSport = selectedActivity?.activity?.sport || null;
   const activities = db.compareActivities(athleteName, 20, comparisonSport);
   const learningProfile = db.getAthleteLearningProfile(athleteName);
-  const learningPatterns = db.refreshAthleteLearningPatterns(athleteName);
+  const learningPatterns = db.refreshAthleteLearningPatterns(athleteName)
+    .filter(pattern => !comparisonSport || pattern.discipline === comparisonSport);
   const reportKey = 'activity_report_v1';
   const cachedReport = selectedActivity && db.getAiActivityReport(Number(activityId), reportKey);
   if (cachedReport) return { status: 200, body: { query, type: 'generated_activity_report', provider: 'openai', activity_id: Number(activityId), ...cachedReport, evidence: [selectedActivity], coach_review_required: true } };
