@@ -44,7 +44,8 @@ const ASSISTANT_SYSTEM_PROMPT = [
   'No diagnostiques fatiga, enfermedad, lesión ni estado médico. No ordenes modificar un plan; cualquier recomendación es una propuesta sujeta a revisión del entrenador.',
   'No rechaces una pregunta solo porque no exista una regla analítica específica. Responde con la evidencia disponible o declara insuficiencia.',
   'Responde primero de forma directa y luego separa evidencia, cálculos, interpretación, hipótesis, limitaciones y recomendación cuando corresponda.',
-  'Devuelve únicamente JSON válido con las claves answer, interpretation, hypothesis, recommendation y limitation.'
+  'Devuelve únicamente JSON válido con las claves answer, interpretation, hypothesis, recommendation y limitation.',
+  'En informes de actividad incluye calculations como arreglo de textos: solo cálculos derivados verificables (por ejemplo ritmo por segmento, variación porcentual o diferencia entre tramos) y, si faltan registros suficientes, indica que no es calculable. Las capas interpretation, hypothesis y recommendation deben ser texto, nunca objetos.',
 ].join(' ');
 
 function json(res, status, payload) {
@@ -444,6 +445,27 @@ function extractOpenAIText(result) {
   return (result.output || []).flatMap(item => item.content || []).filter(item => item.type === 'output_text').map(item => item.text).join('\n');
 }
 
+function readableLayer(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map(readableLayer).filter(Boolean).join('\n');
+  return Object.entries(value).map(([key, item]) => `${key}: ${readableLayer(item) || 'No disponible'}`).join('\n');
+}
+
+function normalizeGeneratedReport(value) {
+  const generated = value && typeof value === 'object' ? value : { answer: readableLayer(value) };
+  return {
+    answer: readableLayer(generated.answer) || 'No fue posible generar una respuesta estructurada.',
+    calculations: Array.isArray(generated.calculations)
+      ? generated.calculations.map(readableLayer).filter(Boolean)
+      : [readableLayer(generated.calculations)].filter(Boolean),
+    interpretation: readableLayer(generated.interpretation),
+    hypothesis: readableLayer(generated.hypothesis),
+    recommendation: readableLayer(generated.recommendation),
+    limitation: readableLayer(generated.limitation)
+  };
+}
+
 async function assistantQuery(query, history = [], activityId = null) {
   const activities = db.compareActivities('Miguel Bello', 20);
   const selectedActivity = activityId ? db.getActivityAnalysisContext(Number(activityId)) : null;
@@ -478,6 +500,7 @@ async function assistantQuery(query, history = [], activityId = null) {
     const raw = extractOpenAIText(result);
     let generated;
     try { generated = JSON.parse(raw); } catch { generated = { answer: raw, interpretation: null, hypothesis: null, recommendation: null, limitation: 'La salida del modelo no llegó en JSON estructurado.' }; }
+    generated = normalizeGeneratedReport(generated);
     return { status: 200, body: { query, type: selectedActivity ? 'generated_activity_report' : 'generated_grounded_answer', provider: 'openai', model: OPENAI_MODEL, activity_id: selectedActivity?.activity?.id || null, ...generated, evidence: selectedActivity ? [selectedActivity] : activities, coach_review_required: true } };
   } catch (error) { return unavailable('OpenAI no está disponible: ' + error.message); }
 }

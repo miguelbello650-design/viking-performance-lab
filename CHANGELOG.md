@@ -1,6 +1,9 @@
 # Changelog
 
 ## 2026-07-29
+- Corregida la salida del informe generativo: interpretación, hipótesis y recomendación se normalizan a texto legible; `calculations` se entrega como arreglo de textos y se preservan las limitaciones cuando no hay datos suficientes.
+
+## 2026-07-29
 - Organizada la navegacion del frontend oficial en Lovable: las seis secciones laterales ahora tienen vistas funcionales, estados de carga/vacio/error y foco accesible; se conservaron API real, filtros y datos sincronizados. Publicacion actualizada en `https://vikingcoach.lovable.app`.
 - Ajustada la sincronizacion Strava: nuevo modo manual `full` para recuperar todo el historial, solapamiento de 24 horas en incrementales y conservacion del nombre exacto de la actividad de Strava. Frontend pendiente de publicar junto con el backend.
 - Verificado el redeploy en Render: la instancia gratuita no conserva SQLite entre despliegues y la conexion Strava publica quedo desconectada; se requiere una nueva autorizacion antes de sincronizar el historial completo.

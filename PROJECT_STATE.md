@@ -1,5 +1,7 @@
 # Estado del proyecto
 
+El informe generativo por actividad ya normaliza las capas devueltas por OpenAI para evitar `[object Object]`; el backend exige cálculos como textos verificables y declara cuando no son calculables. Pendiente publicar este ajuste y repetir una prueba real.
+
 La vista de actividades incorpora ruta GPS y perfil de altitud observados mediante `GET /api/activities/:id/route`, sin mapa externo ni interpretacion automatica del recorrido.
 Se corrigio la sincronizacion de la vista de detalle: la ruta ahora se inserta despues de cargar la actividad, evitando que el contenido del detalle la reemplace.
 El detalle individual ahora muestra un mapa OpenStreetMap con Leaflet, linea GPS observada y marcadores de inicio y final, sin API Key de Google.
