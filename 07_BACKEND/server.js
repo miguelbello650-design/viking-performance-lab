@@ -107,10 +107,23 @@ async function stravaRequest(url, options = {}) {
 }
 function mapStravaSport(activity) {
   const type = String(activity.sport_type || activity.type || '').toLowerCase();
-  if (type.includes('ride') || type.includes('bike') || type.includes('cycling')) return 'ciclismo';
-  if (type.includes('trail')) return 'trail_running';
-  if (type.includes('run')) return 'running_asfalto';
-  return 'unknown';
+  if (type.includes('trail')) return 'TrailRun';
+  if (type.includes('run')) return 'Run';
+  if (type.includes('ride') || type.includes('bike') || type.includes('cycling')) return 'Ride';
+  return 'Fuerza y/o movilidad';
+}
+function remapStoredStravaSports() {
+  const rows = db.db.prepare(`SELECT a.id, m.fields_json
+    FROM activities a JOIN activity_messages m ON m.activity_id = a.id
+    WHERE a.source_provider = 'strava_api' AND m.message_type = 'session'`).all();
+  const update = db.db.prepare('UPDATE activities SET sport = ? WHERE id = ?');
+  for (const row of rows) {
+    try {
+      const fields = JSON.parse(row.fields_json || '{}');
+      const sourceType = fields.sub_sport?.value || fields.sub_sport?.raw || fields.sport?.value || fields.sport?.raw;
+      update.run(mapStravaSport({ sport_type: sourceType }), row.id);
+    } catch { /* Ignore malformed legacy session data. */ }
+  }
 }
 function mapStravaKind(activity) {
   return activity.workout_type === 1 || activity.race === true ? 'Carrera' : 'Entrenamiento';
@@ -541,6 +554,7 @@ async function assistantQuery(query, history = [], activityId = null) {
 }
 
 db.init();
+remapStoredStravaSports();
 normalizePendingActivities();
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
