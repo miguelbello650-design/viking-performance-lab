@@ -1,6 +1,9 @@
 # Changelog
 
 ## 2026-07-29
+- Ampliado el enriquecimiento de actividades Strava bajo demanda: detalle completo, esfuerzos, vueltas, mejores esfuerzos, splits, zonas y streams adicionales. Los resultados quedan cacheados en SQLite y se entregan al contexto de la IA.
+
+## 2026-07-29
 - Corregida la sincronizacion detallada de Strava: se solicitan y persisten streams de tiempo, distancia, altitud, velocidad, FC, cadencia y potencia cuando estan disponibles. Las actividades sin streams conservan su resumen y generan una advertencia trazable.
 
 ## 2026-07-29

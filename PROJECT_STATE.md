@@ -1,5 +1,7 @@
 # Estado del proyecto
 
+La actividad seleccionada puede enriquecerse bajo demanda con el detalle oficial de Strava, esfuerzos, vueltas, mejores esfuerzos, splits, zonas y streams detallados. El enriquecimiento queda cacheado en SQLite y se ejecuta al generar el informe para evitar agotar los limites de lectura durante una sincronizacion masiva.
+
 La sincronizacion Strava ahora solicita streams detallados por actividad cuando no existen registros: tiempo, distancia, altitud, velocidad, frecuencia cardiaca, cadencia y potencia disponibles. Si Strava no entrega un stream, se conserva la actividad resumen y se declara la limitacion.
 
 El backend incorpora un perfil de aprendizaje por atleta, aislado por la entidad `athletes`: guarda líneas base observadas por disciplina, cantidad de evidencias, periodo y estado de suficiencia. La IA recibe el perfil del atleta seleccionado; Miguel Bello es solo el primer registro y no está codificado como límite del modelo.

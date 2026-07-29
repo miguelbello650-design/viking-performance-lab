@@ -7,6 +7,7 @@ Reservado. No crear código hasta aprobar requisitos, contratos, arquitectura y 
 
 - `GET /api/activities`
 - `GET /api/activities/:id`
+- `POST /api/activities/:id/enrich`
 - `GET /api/athletes/:name/profile`
 - `GET /api/activities/compare?athlete=Miguel%20Bello&limit=4`
 - `POST /api/coach/query`

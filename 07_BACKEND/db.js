@@ -70,6 +70,11 @@ function init() {
       profile_json TEXT NOT NULL DEFAULT '{}',
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS strava_activity_details (
+      activity_id INTEGER PRIMARY KEY REFERENCES activities(id),
+      detail_json TEXT NOT NULL DEFAULT '{}',
+      fetched_at TEXT NOT NULL
+    );
   `);
   const activityColumns = db.prepare('PRAGMA table_info(activities)').all().map(column => column.name);
   if (!activityColumns.includes('source_provider')) db.exec("ALTER TABLE activities ADD COLUMN source_provider TEXT NOT NULL DEFAULT 'file'");
@@ -172,7 +177,8 @@ function getActivityDetail(id) {
   const laps = db.prepare("SELECT message_index, timestamp, fields_json FROM activity_messages WHERE activity_id = ? AND message_type = 'lap' ORDER BY message_index").all(id).map(row => ({ message_index: row.message_index, timestamp: row.timestamp, fields: parseFields(row) }));
   const events = db.prepare("SELECT message_index, timestamp, fields_json FROM activity_messages WHERE activity_id = ? AND message_type = 'event' ORDER BY message_index").all(id).map(row => ({ message_index: row.message_index, timestamp: row.timestamp, fields: parseFields(row) }));
   const recordCount = db.prepare("SELECT COUNT(*) AS count FROM activity_messages WHERE activity_id = ? AND message_type = 'record'").get(id).count;
-  return { activity, normalization, session: session ? { message_index: session.message_index, timestamp: session.timestamp, fields: parseFields(session) } : null, laps, events, record_count: recordCount };
+  const stravaDetail = db.prepare('SELECT detail_json, fetched_at FROM strava_activity_details WHERE activity_id = ?').get(id);
+  return { activity, normalization, strava_detail: stravaDetail ? { ...JSON.parse(stravaDetail.detail_json || '{}'), fetched_at: stravaDetail.fetched_at } : null, session: session ? { message_index: session.message_index, timestamp: session.timestamp, fields: parseFields(session) } : null, laps, events, record_count: recordCount };
 }
 function getActivityAnalysisContext(id, maxSamples = 600) {
   const detail = getActivityDetail(id);
@@ -340,6 +346,17 @@ function upsertStravaActivity(data) {
 function hasActivityRecords(activityId) {
   return db.prepare("SELECT 1 FROM activity_messages WHERE activity_id = ? AND message_type = 'record' LIMIT 1").get(activityId) != null;
 }
+function getStravaActivityDetail(activityId) {
+  const row = db.prepare('SELECT detail_json, fetched_at FROM strava_activity_details WHERE activity_id = ?').get(activityId);
+  return row ? { ...JSON.parse(row.detail_json || '{}'), fetched_at: row.fetched_at } : null;
+}
+function saveStravaActivityDetail(activityId, detail) {
+  const fetchedAt = new Date().toISOString();
+  db.prepare(`INSERT INTO strava_activity_details (activity_id, detail_json, fetched_at) VALUES (?, ?, ?)
+    ON CONFLICT(activity_id) DO UPDATE SET detail_json = excluded.detail_json, fetched_at = excluded.fetched_at`)
+    .run(activityId, JSON.stringify(detail || {}), fetchedAt);
+  return fetchedAt;
+}
 function replaceStravaStreams(activityId, streams, startDate) {
   const source = streams && typeof streams === 'object' ? streams : {};
   const length = Math.max(0, ...Object.values(source).map(stream => Array.isArray(stream?.data) ? stream.data.length : 0));
@@ -359,7 +376,9 @@ function replaceStravaStreams(activityId, streams, startDate) {
       heart_rate: toField(read('heartrate', index)),
       cadence: toField(read('cadence', index)),
       power: toField(read('watts', index)),
-      altitude: toField(read('altitude', index))
+      altitude: toField(read('altitude', index)),
+      grade: toField(read('grade_smooth', index)),
+      moving: toField(read('moving', index))
     };
     Object.keys(fields).forEach(key => { if (!fields[key]) delete fields[key]; });
     const timestamp = Number.isFinite(Number(time)) && startDate ? new Date(new Date(startDate).getTime() + Number(time) * 1000).toISOString() : startDate || null;
@@ -379,4 +398,4 @@ function getActivityRouteFromSource(id, maxPoints = 1200) {
   return { observed_point_count: points.length, source_format: row.source_format, points: points.filter((_, index) => index % step === 0) };
 }
 
-module.exports = { db, init, listActivities, findAthlete, getAthleteLearningProfile, findDuplicate, insertActivity, setStoredPath, deleteActivity, listPendingActivities, listActivitiesWithoutMessages, recordNormalization, replaceMessages, getActivityDetail, getActivityAnalysisContext, getActivityRoute, getActivityRouteFromSource, compareActivities, getStravaConnection, saveStravaConnection, updateStravaTokens, setStravaSyncAt, disconnectStrava, upsertStravaActivity, hasActivityRecords, replaceStravaStreams };
+module.exports = { db, init, listActivities, findAthlete, getAthleteLearningProfile, findDuplicate, insertActivity, setStoredPath, deleteActivity, listPendingActivities, listActivitiesWithoutMessages, recordNormalization, replaceMessages, getActivityDetail, getActivityAnalysisContext, getActivityRoute, getActivityRouteFromSource, compareActivities, getStravaConnection, saveStravaConnection, updateStravaTokens, setStravaSyncAt, disconnectStrava, upsertStravaActivity, hasActivityRecords, replaceStravaStreams, getStravaActivityDetail, saveStravaActivityDetail };

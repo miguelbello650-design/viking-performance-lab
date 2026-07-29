@@ -327,6 +327,24 @@ async function syncStrava(mode = 'incremental') {
   db.setStravaSyncAt('Miguel Bello', syncedAt);
   return { provider: 'strava', athlete: 'Miguel Bello', mode, received, created, updated, skipped: 0, warnings, synced_at: syncedAt };
 }
+async function enrichStravaActivity(activityId, accessToken) {
+  const stored = db.getActivityDetail(Number(activityId));
+  if (!stored || stored.activity.source_provider !== 'strava_api' || !stored.activity.source_activity_id) return null;
+  let detail = db.getStravaActivityDetail(Number(activityId));
+  if (!detail) {
+    detail = await stravaRequest(`${STRAVA_API_BASE}/activities/${stored.activity.source_activity_id}?include_all_efforts=true`, { headers: { Authorization: `Bearer ${accessToken}` } });
+    try {
+      detail.zones = await stravaRequest(`${STRAVA_API_BASE}/activities/${stored.activity.source_activity_id}/zones`, { headers: { Authorization: `Bearer ${accessToken}` } });
+    } catch { detail.zones = null; }
+    db.saveStravaActivityDetail(Number(activityId), detail);
+  }
+  if (!db.hasActivityRecords(Number(activityId))) {
+    const streamQuery = new URLSearchParams({ keys: 'time,distance,altitude,velocity_smooth,heartrate,cadence,watts,latlng,moving,grade_smooth', key_by_type: 'true' });
+    const streams = await stravaRequest(`${STRAVA_API_BASE}/activities/${stored.activity.source_activity_id}/streams?${streamQuery}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+    db.replaceStravaStreams(Number(activityId), streams, stored.activity.created_at || detail.start_date);
+  }
+  return db.getActivityDetail(Number(activityId));
+}
 async function disconnectStrava() {
   const connection = db.getStravaConnection('Miguel Bello');
   if (!connection) return;
@@ -549,11 +567,26 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && routeMatch) return json(res, 200, db.getActivityRouteFromSource(Number(routeMatch[1])) || db.getActivityRoute(Number(routeMatch[1])));
   const detailMatch = /^\/api\/activities\/(\d+)$/.exec(url.pathname);
   if (req.method === 'GET' && detailMatch) { const detail = db.getActivityDetail(Number(detailMatch[1])); return detail ? json(res, 200, detail) : json(res, 404, { error: 'Actividad no encontrada.' }); }
+  const enrichMatch = /^\/api\/activities\/(\d+)\/enrich$/.exec(url.pathname);
+  if (req.method === 'POST' && enrichMatch) {
+    try {
+      const connection = db.getStravaConnection('Miguel Bello');
+      if (!connection) return json(res, 409, { error: 'Strava no está conectado.' });
+      const detail = await enrichStravaActivity(Number(enrichMatch[1]), await ensureStravaToken(connection));
+      return detail ? json(res, 200, { status: 'enriched', activity: detail }) : json(res, 404, { error: 'Actividad no encontrada o no proviene de Strava.' });
+    } catch (error) { return json(res, 502, { error: `No se pudo enriquecer la actividad: ${error.message}` }); }
+  }
   if (req.method === 'POST' && url.pathname === '/api/coach/query') {
     try {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
       const payload = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+      if (payload.activity_id) {
+        try {
+          const connection = db.getStravaConnection('Miguel Bello');
+          if (connection) await enrichStravaActivity(Number(payload.activity_id), await ensureStravaToken(connection));
+        } catch (error) { console.warn(`No se pudo enriquecer la actividad ${payload.activity_id}: ${error.message}`); }
+      }
       const result = await assistantQuery(payload.query, payload.history, payload.activity_id);
       return json(res, result.status, result.body);
     } catch (error) { return json(res, 502, { error: 'No se pudo consultar el asistente: ' + error.message }); }
