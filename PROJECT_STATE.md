@@ -10,6 +10,8 @@ La sincronizacion Strava ahora solicita streams detallados por actividad cuando 
 
 El backend incorpora un perfil de aprendizaje por atleta, aislado por la entidad `athletes`: guarda líneas base observadas por disciplina, cantidad de evidencias, periodo y estado de suficiencia. La IA recibe el perfil del atleta seleccionado; Miguel Bello es solo el primer registro y no está codificado como límite del modelo. Las actividades de Strava se agrupan como `TrailRun`, `Run`, `Ride` o `Fuerza y/o movilidad` cuando el tipo no corresponde a una disciplina deportiva inicial.
 
+El contexto de comparación del motor de IA ahora se limita a la misma categoría de la actividad seleccionada; las conversaciones sin actividad seleccionada conservan el historial multideporte y lo declaran explícitamente al modelo.
+
 Se incorpora como direccion aprobada el autoaprendizaje progresivo del atleta: perfil individual basado en patrones repetidos, confianza y validacion del entrenador. No se reentrena OpenAI automaticamente ni se presentan hipotesis como hechos.
 
 El contexto de análisis de actividad ahora incluye señales derivadas verificables: comparación del primer y último 20% de registros, cambios de velocidad, frecuencia cardíaca y cadencia, además de ascenso y descenso calculados desde la altitud observada. La IA debe convertirlas en hallazgos y preguntas útiles para el entrenador, no repetir el tablero.

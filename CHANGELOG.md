@@ -130,3 +130,4 @@
 - El MVP no dependera de TrainingPeaks.
 - Preparado el backend para despliegue mediante `HOST`, `VPL_DATA_DIR` y `GET /health`, sin incluir datos personales.
 - Ajustada la agrupación de actividades de Strava: `TrailRun`, `Run`, `Ride` y `Fuerza y/o movilidad` para tipos no reconocidos; las actividades históricas se remapean al iniciar el backend.
+- Ajustado el contexto de comparación del motor de IA para no mezclar disciplinas al analizar una actividad seleccionada.

@@ -296,8 +296,11 @@ function comparisonRow(activity) {
   Object.entries(map).forEach(([key, source]) => { const item = fields[source]; if (item && item.value !== null && item.value !== undefined) observed[key] = { raw: item.raw, value: item.value }; });
   return { id: activity.id, filename: activity.original_filename, athlete: activity.athlete, sport: activity.sport, kind: activity.kind, normalization_status: activity.normalization_status, observed, calculated: { record_count: detail.record_count, lap_count: detail.laps.length } };
 }
-function compareActivities(athlete, limit = 4) {
-  const rows = db.prepare(`SELECT activities.*, athletes.name AS athlete FROM activities JOIN athletes ON athletes.id = activities.athlete_id WHERE athletes.name = ? AND activities.normalization_status = 'normalized' ORDER BY activities.id DESC LIMIT ?`).all(athlete, limit).map(comparisonRow).sort((a, b) => String(a.observed.start_time?.value || '').localeCompare(String(b.observed.start_time?.value || '')));
+function compareActivities(athlete, limit = 4, sport = null) {
+  const query = sport
+    ? `SELECT activities.*, athletes.name AS athlete FROM activities JOIN athletes ON athletes.id = activities.athlete_id WHERE athletes.name = ? AND activities.normalization_status = 'normalized' AND activities.sport = ? ORDER BY activities.id DESC LIMIT ?`
+    : `SELECT activities.*, athletes.name AS athlete FROM activities JOIN athletes ON athletes.id = activities.athlete_id WHERE athletes.name = ? AND activities.normalization_status = 'normalized' ORDER BY activities.id DESC LIMIT ?`;
+  const rows = db.prepare(query).all(...(sport ? [athlete, sport, limit] : [athlete, limit])).map(comparisonRow).sort((a, b) => String(a.observed.start_time?.value || '').localeCompare(String(b.observed.start_time?.value || '')));
   rows.forEach((row, index) => { const previous = rows[index - 1]; row.calculated.delta_from_previous = {}; if (!previous) return; ['duration_seconds', 'distance_m', 'average_speed_mps', 'average_heart_rate_bpm', 'average_power_w', 'ascent_m', 'descent_m'].forEach(key => { const current = row.observed[key]?.value; const prior = previous.observed[key]?.value; if (Number.isFinite(current) && Number.isFinite(prior)) row.calculated.delta_from_previous[key] = current - prior; }); });
   return rows;
 }

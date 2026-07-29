@@ -510,7 +510,8 @@ function normalizeGeneratedReport(value) {
 async function assistantQuery(query, history = [], activityId = null) {
   const selectedActivity = activityId ? db.getActivityAnalysisContext(Number(activityId)) : null;
   const athleteName = selectedActivity?.activity?.athlete || 'Miguel Bello';
-  const activities = db.compareActivities(athleteName, 20);
+  const comparisonSport = selectedActivity?.activity?.sport || null;
+  const activities = db.compareActivities(athleteName, 20, comparisonSport);
   const learningProfile = db.getAthleteLearningProfile(athleteName);
   const learningPatterns = db.refreshAthleteLearningPatterns(athleteName);
   const reportKey = 'activity_report_v1';
@@ -529,7 +530,7 @@ async function assistantQuery(query, history = [], activityId = null) {
     coach_review_required: true
   } });
   if (!OPENAI_API_KEY) return unavailable('Configura OPENAI_API_KEY en el backend para activar el chat generativo.');
-  const context = JSON.stringify({ athlete: athleteName, activities, selected_activity: selectedActivity, learning_profile: learningProfile, learning_patterns: learningPatterns });
+  const context = JSON.stringify({ athlete: athleteName, comparison_scope: comparisonSport || 'all_disciplines', activities, selected_activity: selectedActivity, learning_profile: learningProfile, learning_patterns: learningPatterns });
   const payload = {
     model: OPENAI_MODEL,
     instructions: ASSISTANT_SYSTEM_PROMPT + ' Responde directamente la pregunta usando el contexto JSON y el historial de conversación.',
