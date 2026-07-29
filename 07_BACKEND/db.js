@@ -75,6 +75,15 @@ function init() {
       detail_json TEXT NOT NULL DEFAULT '{}',
       fetched_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS ai_activity_reports (
+      activity_id INTEGER NOT NULL REFERENCES activities(id),
+      report_key TEXT NOT NULL,
+      model TEXT,
+      report_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (activity_id, report_key)
+    );
   `);
   const activityColumns = db.prepare('PRAGMA table_info(activities)').all().map(column => column.name);
   if (!activityColumns.includes('source_provider')) db.exec("ALTER TABLE activities ADD COLUMN source_provider TEXT NOT NULL DEFAULT 'file'");
@@ -357,6 +366,19 @@ function saveStravaActivityDetail(activityId, detail) {
     .run(activityId, JSON.stringify(detail || {}), fetchedAt);
   return fetchedAt;
 }
+function getAiActivityReport(activityId, reportKey = 'activity_report_v1') {
+  const row = db.prepare('SELECT report_json, model, created_at, updated_at FROM ai_activity_reports WHERE activity_id = ? AND report_key = ?').get(activityId, reportKey);
+  if (!row) return null;
+  return { ...JSON.parse(row.report_json || '{}'), model: row.model, created_at: row.created_at, updated_at: row.updated_at, cached: true };
+}
+function saveAiActivityReport(activityId, report, model, reportKey = 'activity_report_v1') {
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO ai_activity_reports (activity_id, report_key, model, report_json, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(activity_id, report_key) DO UPDATE SET model = excluded.model, report_json = excluded.report_json, updated_at = excluded.updated_at`)
+    .run(activityId, reportKey, model || null, JSON.stringify(report || {}), now, now);
+  return { ...report, model: model || null, created_at: now, updated_at: now, cached: false };
+}
 function replaceStravaStreams(activityId, streams, startDate) {
   const source = streams && typeof streams === 'object' ? streams : {};
   const length = Math.max(0, ...Object.values(source).map(stream => Array.isArray(stream?.data) ? stream.data.length : 0));
@@ -398,4 +420,4 @@ function getActivityRouteFromSource(id, maxPoints = 1200) {
   return { observed_point_count: points.length, source_format: row.source_format, points: points.filter((_, index) => index % step === 0) };
 }
 
-module.exports = { db, init, listActivities, findAthlete, getAthleteLearningProfile, findDuplicate, insertActivity, setStoredPath, deleteActivity, listPendingActivities, listActivitiesWithoutMessages, recordNormalization, replaceMessages, getActivityDetail, getActivityAnalysisContext, getActivityRoute, getActivityRouteFromSource, compareActivities, getStravaConnection, saveStravaConnection, updateStravaTokens, setStravaSyncAt, disconnectStrava, upsertStravaActivity, hasActivityRecords, replaceStravaStreams, getStravaActivityDetail, saveStravaActivityDetail };
+module.exports = { db, init, listActivities, findAthlete, getAthleteLearningProfile, findDuplicate, insertActivity, setStoredPath, deleteActivity, listPendingActivities, listActivitiesWithoutMessages, recordNormalization, replaceMessages, getActivityDetail, getActivityAnalysisContext, getActivityRoute, getActivityRouteFromSource, compareActivities, getStravaConnection, saveStravaConnection, updateStravaTokens, setStravaSyncAt, disconnectStrava, upsertStravaActivity, hasActivityRecords, replaceStravaStreams, getStravaActivityDetail, saveStravaActivityDetail, getAiActivityReport, saveAiActivityReport };

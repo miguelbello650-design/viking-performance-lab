@@ -498,6 +498,9 @@ async function assistantQuery(query, history = [], activityId = null) {
   const athleteName = selectedActivity?.activity?.athlete || 'Miguel Bello';
   const activities = db.compareActivities(athleteName, 20);
   const learningProfile = db.getAthleteLearningProfile(athleteName);
+  const reportKey = 'activity_report_v1';
+  const cachedReport = selectedActivity && db.getAiActivityReport(Number(activityId), reportKey);
+  if (cachedReport) return { status: 200, body: { query, type: 'generated_activity_report', provider: 'openai', activity_id: Number(activityId), ...cachedReport, evidence: [selectedActivity], coach_review_required: true } };
   const unavailable = reason => ({ status: 200, body: {
     query,
     type: 'provider_unavailable',
@@ -530,7 +533,8 @@ async function assistantQuery(query, history = [], activityId = null) {
     let generated;
     try { generated = JSON.parse(raw); } catch { generated = { answer: raw, interpretation: null, hypothesis: null, recommendation: null, limitation: 'La salida del modelo no llegó en JSON estructurado.' }; }
     generated = normalizeGeneratedReport(generated);
-    return { status: 200, body: { query, type: selectedActivity ? 'generated_activity_report' : 'generated_grounded_answer', provider: 'openai', model: OPENAI_MODEL, activity_id: selectedActivity?.activity?.id || null, ...generated, evidence: selectedActivity ? [selectedActivity] : activities, coach_review_required: true } };
+    const savedReport = selectedActivity ? db.saveAiActivityReport(Number(activityId), generated, OPENAI_MODEL, reportKey) : generated;
+    return { status: 200, body: { query, type: selectedActivity ? 'generated_activity_report' : 'generated_grounded_answer', provider: 'openai', model: OPENAI_MODEL, activity_id: selectedActivity?.activity?.id || null, ...savedReport, evidence: selectedActivity ? [selectedActivity] : activities, coach_review_required: true } };
   } catch (error) { return unavailable('OpenAI no está disponible: ' + error.message); }
 }
 
@@ -576,12 +580,17 @@ const server = http.createServer(async (req, res) => {
       return detail ? json(res, 200, { status: 'enriched', activity: detail }) : json(res, 404, { error: 'Actividad no encontrada o no proviene de Strava.' });
     } catch (error) { return json(res, 502, { error: `No se pudo enriquecer la actividad: ${error.message}` }); }
   }
+  const reportMatch = /^\/api\/activities\/(\d+)\/report$/.exec(url.pathname);
+  if (req.method === 'GET' && reportMatch) {
+    const report = db.getAiActivityReport(Number(reportMatch[1]));
+    return report ? json(res, 200, { type: 'generated_activity_report', provider: 'openai', activity_id: Number(reportMatch[1]), ...report, coach_review_required: true }) : json(res, 404, { error: 'No hay informe guardado para esta actividad.' });
+  }
   if (req.method === 'POST' && url.pathname === '/api/coach/query') {
     try {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
       const payload = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
-      if (payload.activity_id) {
+      if (payload.activity_id && !db.getAiActivityReport(Number(payload.activity_id))) {
         try {
           const connection = db.getStravaConnection('Miguel Bello');
           if (connection) await enrichStravaActivity(Number(payload.activity_id), await ensureStravaToken(connection));

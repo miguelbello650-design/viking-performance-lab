@@ -1,6 +1,9 @@
 # Changelog
 
 ## 2026-07-29
+- Añadida persistencia de informes IA por actividad en SQLite. El informe se reutiliza en consultas posteriores y se expone mediante `GET /api/activities/:id/report`, reduciendo consumo de OpenAI.
+
+## 2026-07-29
 - Ampliado el enriquecimiento de actividades Strava bajo demanda: detalle completo, esfuerzos, vueltas, mejores esfuerzos, splits, zonas y streams adicionales. Los resultados quedan cacheados en SQLite y se entregan al contexto de la IA.
 
 ## 2026-07-29
