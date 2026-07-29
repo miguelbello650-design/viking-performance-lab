@@ -444,13 +444,14 @@ function extractOpenAIText(result) {
   return (result.output || []).flatMap(item => item.content || []).filter(item => item.type === 'output_text').map(item => item.text).join('\n');
 }
 
-async function assistantQuery(query, history = []) {
+async function assistantQuery(query, history = [], activityId = null) {
   const activities = db.compareActivities('Miguel Bello', 20);
+  const selectedActivity = activityId ? db.getActivityAnalysisContext(Number(activityId)) : null;
   const unavailable = reason => ({ status: 200, body: {
     query,
     type: 'provider_unavailable',
     answer: 'El chat de IA no está disponible en este momento.',
-    evidence: activities,
+    evidence: selectedActivity ? [selectedActivity] : activities,
     interpretation: null,
     hypothesis: null,
     recommendation: null,
@@ -459,11 +460,11 @@ async function assistantQuery(query, history = []) {
     coach_review_required: true
   } });
   if (!OPENAI_API_KEY) return unavailable('Configura OPENAI_API_KEY en el backend para activar el chat generativo.');
-  const context = JSON.stringify({ athlete: 'Miguel Bello', activities });
+  const context = JSON.stringify({ athlete: 'Miguel Bello', activities, selected_activity: selectedActivity });
   const payload = {
     model: OPENAI_MODEL,
     instructions: ASSISTANT_SYSTEM_PROMPT + ' Responde directamente la pregunta usando el contexto JSON y el historial de conversación.',
-    input: JSON.stringify({ question: String(query || ''), conversation_history: Array.isArray(history) ? history.slice(-10) : [], observed_context: JSON.parse(context) }),
+    input: JSON.stringify({ question: String(query || ''), analysis_mode: selectedActivity ? 'activity_report' : 'conversation', conversation_history: Array.isArray(history) ? history.slice(-10) : [], observed_context: JSON.parse(context) }),
     store: false
   };
   try {
@@ -477,7 +478,7 @@ async function assistantQuery(query, history = []) {
     const raw = extractOpenAIText(result);
     let generated;
     try { generated = JSON.parse(raw); } catch { generated = { answer: raw, interpretation: null, hypothesis: null, recommendation: null, limitation: 'La salida del modelo no llegó en JSON estructurado.' }; }
-    return { status: 200, body: { query, type: 'generated_grounded_answer', provider: 'openai', model: OPENAI_MODEL, ...generated, evidence: activities, coach_review_required: true } };
+    return { status: 200, body: { query, type: selectedActivity ? 'generated_activity_report' : 'generated_grounded_answer', provider: 'openai', model: OPENAI_MODEL, activity_id: selectedActivity?.activity?.id || null, ...generated, evidence: selectedActivity ? [selectedActivity] : activities, coach_review_required: true } };
   } catch (error) { return unavailable('OpenAI no está disponible: ' + error.message); }
 }
 
@@ -514,7 +515,7 @@ const server = http.createServer(async (req, res) => {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
       const payload = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
-      const result = await assistantQuery(payload.query, payload.history);
+      const result = await assistantQuery(payload.query, payload.history, payload.activity_id);
       return json(res, result.status, result.body);
     } catch (error) { return json(res, 502, { error: 'No se pudo consultar el asistente: ' + error.message }); }
   }

@@ -3,6 +3,8 @@
 ## 2026-07-29
 - Organizada la navegacion del frontend oficial en Lovable: las seis secciones laterales ahora tienen vistas funcionales, estados de carga/vacio/error y foco accesible; se conservaron API real, filtros y datos sincronizados. Publicacion actualizada en `https://vikingcoach.lovable.app`.
 - Ajustada la sincronizacion Strava: nuevo modo manual `full` para recuperar todo el historial, solapamiento de 24 horas en incrementales y conservacion del nombre exacto de la actividad de Strava. Frontend pendiente de publicar junto con el backend.
+- Verificado el redeploy en Render: la instancia gratuita no conserva SQLite entre despliegues y la conexion Strava publica quedo desconectada; se requiere una nueva autorizacion antes de sincronizar el historial completo.
+- Definido `01_PRODUCTO/PLAN_IA_GENERATIVA_MVP.md`: la primera fase sera un informe generativo por actividad/carrera; el tablero de cumplimiento, carga y riesgo queda condicionado a contar con fuentes y reglas aprobadas.
 - Cambio de arquitectura del MVP: Strava pasa a ser la fuente primaria via API/OAuth2; la carga FIT/GPX/TCX/CSV queda fuera del flujo principal. Se documento en `02_REQUISITOS/INTEGRACION_STRAVA_MVP.md`.
 - Cerrado el contrato Strava del piloto: Miguel Bello como unico atleta, `activity:read_all`, historial inicial de 12 meses y sincronizacion incremental manual.
 - Implementado el primer vertical backend Strava: OAuth2, tokens cifrados, sincronizacion idempotente por `strava_activity_id`, persistencia de rutas y desconexion segura. Falta conectar el frontend.

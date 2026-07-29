@@ -134,6 +134,35 @@ function getActivityDetail(id) {
   const recordCount = db.prepare("SELECT COUNT(*) AS count FROM activity_messages WHERE activity_id = ? AND message_type = 'record'").get(id).count;
   return { activity, normalization, session: session ? { message_index: session.message_index, timestamp: session.timestamp, fields: parseFields(session) } : null, laps, events, record_count: recordCount };
 }
+function getActivityAnalysisContext(id, maxSamples = 600) {
+  const detail = getActivityDetail(id);
+  if (!detail) return null;
+  const rows = db.prepare("SELECT message_index, timestamp, fields_json FROM activity_messages WHERE activity_id = ? AND message_type = 'record' ORDER BY message_index").all(id);
+  const step = Math.max(1, Math.ceil(rows.length / maxSamples));
+  const records = rows.filter((_, index) => index % step === 0).map(row => {
+    const fields = parseFields(row);
+    const pick = names => { for (const name of names) if (fields[name]) return fields[name]; return null; };
+    return {
+      message_index: row.message_index,
+      timestamp: row.timestamp,
+      distance_m: pick(['distance', 'field_5']),
+      speed_mps: pick(['enhanced_speed', 'speed', 'field_6']),
+      heart_rate_bpm: pick(['heart_rate', 'field_3']),
+      cadence_rpm: pick(['cadence', 'enhanced_cadence', 'field_4']),
+      altitude_m: pick(['altitude', 'enhanced_altitude', 'field_2'])
+    };
+  });
+  return {
+    activity: detail.activity,
+    normalization: detail.normalization,
+    session: detail.session,
+    laps: detail.laps,
+    events: detail.events,
+    record_count: detail.record_count,
+    records_sampled: records.length,
+    records
+  };
+}
 function routeCoordinate(item) {
   if (!item) return null;
   const value = Number(item.value);
@@ -244,4 +273,4 @@ function getActivityRouteFromSource(id, maxPoints = 1200) {
   return { observed_point_count: points.length, source_format: row.source_format, points: points.filter((_, index) => index % step === 0) };
 }
 
-module.exports = { db, init, listActivities, findAthlete, findDuplicate, insertActivity, setStoredPath, deleteActivity, listPendingActivities, listActivitiesWithoutMessages, recordNormalization, replaceMessages, getActivityDetail, getActivityRoute, getActivityRouteFromSource, compareActivities, getStravaConnection, saveStravaConnection, updateStravaTokens, setStravaSyncAt, disconnectStrava, upsertStravaActivity };
+module.exports = { db, init, listActivities, findAthlete, findDuplicate, insertActivity, setStoredPath, deleteActivity, listPendingActivities, listActivitiesWithoutMessages, recordNormalization, replaceMessages, getActivityDetail, getActivityAnalysisContext, getActivityRoute, getActivityRouteFromSource, compareActivities, getStravaConnection, saveStravaConnection, updateStravaTokens, setStravaSyncAt, disconnectStrava, upsertStravaActivity };
