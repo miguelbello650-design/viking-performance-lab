@@ -237,6 +237,29 @@ function getActivityAnalysisContext(id, maxSamples = 600) {
   const firstCadence = segment(first, 'cadence_rpm');
   const lastCadence = segment(last, 'cadence_rpm');
   const changes = (start, end) => start && end && start.mean !== 0 ? { absolute: end.mean - start.mean, percent: ((end.mean - start.mean) / start.mean) * 100 } : null;
+  const meanField = (items, key) => {
+    const values = items.map(item => numeric(item, key)).filter(Number.isFinite);
+    return values.length ? { samples: values.length, mean: values.reduce((sum, value) => sum + value, 0) / values.length } : null;
+  };
+  const distanceRecords = records.filter(record => Number.isFinite(numeric(record, 'distance_m')));
+  const segmentBase = distanceRecords.length >= 5 ? distanceRecords : records;
+  const segmentSize = Math.max(1, Math.ceil(segmentBase.length / 5));
+  const segments = Array.from({ length: 5 }, (_, index) => {
+    const items = segmentBase.slice(index * segmentSize, (index + 1) * segmentSize);
+    if (!items.length) return null;
+    const distances = items.map(item => numeric(item, 'distance_m')).filter(Number.isFinite);
+    const altitudes = items.map(item => numeric(item, 'altitude_m')).filter(Number.isFinite);
+    return {
+      segment: index + 1,
+      distance_start_m: distances.length ? distances[0] : null,
+      distance_end_m: distances.length ? distances[distances.length - 1] : null,
+      speed_mps: meanField(items, 'speed_mps'),
+      heart_rate_bpm: meanField(items, 'heart_rate_bpm'),
+      cadence_rpm: meanField(items, 'cadence_rpm'),
+      altitude_range_m: altitudes.length ? { min: Math.min(...altitudes), max: Math.max(...altitudes) } : null,
+      samples: items.length
+    };
+  }).filter(Boolean);
   const altitudeValues = records.map(record => numeric(record, 'altitude_m')).filter(Number.isFinite);
   let ascent = 0;
   let descent = 0;
@@ -251,6 +274,7 @@ function getActivityAnalysisContext(id, maxSamples = 600) {
     first_20_percent: { speed_mps: firstSpeed, heart_rate_bpm: firstHeartRate, cadence_rpm: firstCadence },
     last_20_percent: { speed_mps: lastSpeed, heart_rate_bpm: lastHeartRate, cadence_rpm: lastCadence },
     changes_first_to_last_20_percent: { speed_mps: changes(firstSpeed, lastSpeed), heart_rate_bpm: changes(firstHeartRate, lastHeartRate), cadence_rpm: changes(firstCadence, lastCadence) },
+    segments,
     altitude_from_records: altitudeValues.length > 1 ? { ascent_m: ascent, descent_m: descent } : null
   };
   return {

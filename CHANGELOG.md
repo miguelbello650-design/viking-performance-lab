@@ -132,3 +132,4 @@
 - Ajustada la agrupación de actividades de Strava: `TrailRun`, `Run`, `Ride` y `Fuerza y/o movilidad` para tipos no reconocidos; las actividades históricas se remapean al iniciar el backend.
 - Ajustado el contexto de comparación del motor de IA para no mezclar disciplinas al analizar una actividad seleccionada.
 - Aislados también los patrones aprendidos por categoría dentro del contexto de una actividad.
+- Añadido análisis determinista en cinco segmentos para que la IA pueda localizar cambios de velocidad, frecuencia cardiaca, cadencia y altitud dentro de una actividad.
