@@ -3,7 +3,6 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const zlib = require('zlib');
-const db = require('./db');
 const { parseFit } = require('./fit');
 
 const envFile = path.join(__dirname, '..', '.env');
@@ -13,14 +12,27 @@ if (fs.existsSync(envFile)) {
     if (match && !process.env[match[1]]) process.env[match[1]] = match[2].replace(/^"(.*)"$/, '$1');
   }
 }
+const db = require('./db');
 const PORT = Number(process.env.PORT || 8766);
+// Render injects PORT; bind externally there while keeping local development private.
+const HOST = process.env.HOST || (process.env.PORT ? '0.0.0.0' : '127.0.0.1');
 const ROOT = path.resolve(__dirname, '..');
 const FRONTEND = path.join(ROOT, '08_FRONTEND', 'index.html');
-const UPLOADS = path.join(ROOT, '09_DATOS_PRUEBA', 'importados');
+const UPLOADS = path.join(process.env.VPL_DATA_DIR || path.join(ROOT, '09_DATOS_PRUEBA'), 'importados');
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = ['.fit', '.fit.gz', '.gpx', '.tcx', '.csv'];
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5.6-terra';
+const STRAVA_CLIENT_ID = process.env.STRAVA_CLIENT_ID || '';
+const STRAVA_CLIENT_SECRET = process.env.STRAVA_CLIENT_SECRET || '';
+const STRAVA_REDIRECT_URI = process.env.STRAVA_REDIRECT_URI || 'http://localhost:8766/api/integrations/strava/callback';
+const STRAVA_FRONTEND_REDIRECT = process.env.STRAVA_FRONTEND_REDIRECT || 'http://localhost:5173';
+const STRAVA_TOKEN_KEY = process.env.STRAVA_TOKEN_KEY || '';
+const STRAVA_API_BASE = 'https://www.strava.com/api/v3';
+const STRAVA_OAUTH_BASE = 'https://www.strava.com/oauth';
+const stravaOAuthStates = new Map();
+const FRONTEND_ORIGINS = (process.env.FRONTEND_ORIGINS || 'http://localhost:8766,http://localhost:5173')
+  .split(',').map(origin => origin.trim()).filter(Boolean);
 const ASSISTANT_SYSTEM_PROMPT = [
   'Eres el asistente de análisis deportivo de Viking Performance Lab, una plataforma de inteligencia deportiva para entrenadores y atletas de deportes de resistencia.',
   'Actúas como un analista deportivo experto en trail running, running de asfalto y ciclismo. Estás conversando con un entrenador profesional. Comunícate en español, con lenguaje claro, preciso y técnico cuando sea útil.',
@@ -39,6 +51,81 @@ function json(res, status, payload) {
   const body = Buffer.from(JSON.stringify(payload));
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length });
   res.end(body);
+}
+
+function setCors(req, res) {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  if (!FRONTEND_ORIGINS.includes(origin)) return false;
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  return true;
+}
+
+function tokenCipherKey() {
+  if (!STRAVA_TOKEN_KEY) throw new Error('STRAVA_TOKEN_KEY no está configurada.');
+  return crypto.createHash('sha256').update(STRAVA_TOKEN_KEY).digest();
+}
+function encryptSecret(value) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', tokenCipherKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(String(value), 'utf8'), cipher.final()]);
+  return [iv.toString('base64url'), cipher.getAuthTag().toString('base64url'), encrypted.toString('base64url')].join('.');
+}
+function decryptSecret(value) {
+  const [ivText, tagText, encryptedText] = String(value).split('.');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', tokenCipherKey(), Buffer.from(ivText, 'base64url'));
+  decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
+  return Buffer.concat([decipher.update(Buffer.from(encryptedText, 'base64url')), decipher.final()]).toString('utf8');
+}
+function redirectWithStravaResult(status, message) {
+  const target = new URL(STRAVA_FRONTEND_REDIRECT);
+  target.searchParams.set('strava', status);
+  if (message) target.searchParams.set('message', message);
+  return target.toString();
+}
+function jsonBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); } catch (error) { reject(error); } });
+    req.on('error', reject);
+  });
+}
+async function stravaRequest(url, options = {}) {
+  const response = await fetch(url, options);
+  const text = await response.text();
+  let body;
+  try { body = JSON.parse(text || '{}'); } catch { body = { raw: text }; }
+  if (!response.ok) throw new Error(`Strava ${response.status}: ${body.message || body.raw || 'respuesta no válida'}`);
+  return body;
+}
+function mapStravaSport(activity) {
+  const type = String(activity.sport_type || activity.type || '').toLowerCase();
+  if (type.includes('ride') || type.includes('bike') || type.includes('cycling')) return 'ciclismo';
+  if (type.includes('trail')) return 'trail_running';
+  if (type.includes('run')) return 'running_asfalto';
+  return 'unknown';
+}
+function mapStravaKind(activity) {
+  return activity.workout_type === 1 || activity.race === true ? 'Carrera' : 'Entrenamiento';
+}
+function decodePolyline(encoded) {
+  if (!encoded) return [];
+  const points = [];
+  let index = 0, lat = 0, lng = 0;
+  while (index < encoded.length) {
+    let shift = 0, result = 0, byte;
+    do { byte = encoded.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20 && index < encoded.length);
+    lat += result & 1 ? ~(result >> 1) : result >> 1;
+    shift = 0; result = 0;
+    do { byte = encoded.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20 && index < encoded.length);
+    lng += result & 1 ? ~(result >> 1) : result >> 1;
+    points.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
+  }
+  return points;
 }
 
 function readMultipart(req) {
@@ -138,6 +225,99 @@ async function importActivity(req, res) {
     }
     json(res, 201, { activity_id: activityId, filename: uploaded.filename, status: 'accepted', normalization_status: 'pending' });
   } catch (error) { json(res, 500, { error: `No se pudo registrar el archivo: ${error.message}` }); }
+}
+
+function stravaStatus() {
+  const connection = db.getStravaConnection('Miguel Bello');
+  if (!connection) return { provider: 'strava', athlete: 'Miguel Bello', connected: false, granted_scopes: [], last_sync_at: null, sync_status: 'not_connected' };
+  return { provider: 'strava', athlete: 'Miguel Bello', connected: connection.status === 'connected', granted_scopes: JSON.parse(connection.scopes_json || '[]'), last_sync_at: connection.last_sync_at, sync_status: connection.status };
+}
+function requireStravaConfig() {
+  if (!STRAVA_CLIENT_ID || !STRAVA_CLIENT_SECRET || !STRAVA_TOKEN_KEY) throw new Error('Faltan STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET o STRAVA_TOKEN_KEY.');
+}
+function startStravaConnection(res) {
+  requireStravaConfig();
+  const state = crypto.randomBytes(24).toString('base64url');
+  stravaOAuthStates.set(state, { createdAt: Date.now(), athlete: 'Miguel Bello' });
+  const authorize = new URL(`${STRAVA_OAUTH_BASE}/authorize`);
+  authorize.search = new URLSearchParams({ client_id: STRAVA_CLIENT_ID, redirect_uri: STRAVA_REDIRECT_URI, response_type: 'code', approval_prompt: 'auto', scope: 'activity:read_all', state }).toString();
+  res.writeHead(302, { Location: authorize.toString(), 'Cache-Control': 'no-store' });
+  res.end();
+}
+async function completeStravaConnection(url, res) {
+  const state = url.searchParams.get('state');
+  const stateData = state && stravaOAuthStates.get(state);
+  if (!stateData || Date.now() - stateData.createdAt > 10 * 60 * 1000) return res.writeHead(302, { Location: redirectWithStravaResult('error', 'La autorización expiró.') }), res.end();
+  stravaOAuthStates.delete(state);
+  if (url.searchParams.get('error')) return res.writeHead(302, { Location: redirectWithStravaResult('denied', 'Miguel no autorizó el acceso.') }), res.end();
+  try {
+    requireStravaConfig();
+    const token = await stravaRequest(`${STRAVA_OAUTH_BASE}/token`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: STRAVA_CLIENT_ID, client_secret: STRAVA_CLIENT_SECRET, code: url.searchParams.get('code') || '', grant_type: 'authorization_code' }) });
+    const athlete = db.findAthlete('Miguel Bello');
+    db.saveStravaConnection({ athleteId: athlete.id, stravaAthleteId: token.athlete.id, accessToken: encryptSecret(token.access_token), refreshToken: encryptSecret(token.refresh_token), expiresAt: token.expires_at, scopes: String(token.scope || '').split(/[ ,]+/).filter(Boolean) });
+    res.writeHead(302, { Location: redirectWithStravaResult('connected') });
+    res.end();
+  } catch (error) { res.writeHead(302, { Location: redirectWithStravaResult('error', error.message) }); res.end(); }
+}
+async function ensureStravaToken(connection) {
+  const accessToken = decryptSecret(connection.access_token);
+  if (Number(connection.expires_at) > Math.floor(Date.now() / 1000) + 3600) return accessToken;
+  const refreshed = await stravaRequest(`${STRAVA_OAUTH_BASE}/token`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: STRAVA_CLIENT_ID, client_secret: STRAVA_CLIENT_SECRET, grant_type: 'refresh_token', refresh_token: decryptSecret(connection.refresh_token) }) });
+  db.updateStravaTokens('Miguel Bello', { accessToken: encryptSecret(refreshed.access_token), refreshToken: encryptSecret(refreshed.refresh_token), expiresAt: refreshed.expires_at });
+  return refreshed.access_token;
+}
+async function syncStrava(mode = 'incremental') {
+  requireStravaConfig();
+  const connection = db.getStravaConnection('Miguel Bello');
+  if (!connection) throw new Error('Strava no está conectado para Miguel Bello.');
+  const accessToken = await ensureStravaToken(connection);
+  const afterDate = mode === 'initial' ? new Date(Date.now() - 365 * 24 * 60 * 60 * 1000) : (connection.last_sync_at ? new Date(connection.last_sync_at) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+  const after = Math.floor(afterDate.getTime() / 1000);
+  let page = 1, received = 0, created = 0, updated = 0;
+  const warnings = [];
+  while (page <= 20) {
+    const query = new URLSearchParams({ after: String(after), page: String(page), per_page: '100' });
+    const activities = await stravaRequest(`${STRAVA_API_BASE}/athlete/activities?${query}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (!Array.isArray(activities) || !activities.length) break;
+    for (const activity of activities) {
+      received += 1;
+      try {
+        const fields = {
+          start_time: activity.start_date,
+          total_elapsed_time: activity.elapsed_time,
+          total_timer_time: activity.moving_time,
+          total_distance: activity.distance,
+          avg_speed: activity.average_speed,
+          max_speed: activity.max_speed,
+          avg_heart_rate: activity.average_heartrate,
+          max_heart_rate: activity.max_heartrate,
+          avg_cadence: activity.average_cadence,
+          avg_power: activity.average_watts,
+          max_power: activity.max_watts,
+          total_ascent: activity.total_elevation_gain,
+          total_descent: null,
+          sport: mapStravaSport(activity),
+          sub_sport: activity.sport_type || activity.type || null
+        };
+        const result = db.upsertStravaActivity({ athleteId: db.findAthlete('Miguel Bello').id, stravaActivityId: activity.id, sport: mapStravaSport(activity), kind: mapStravaKind(activity), startDate: activity.start_date, fields, routePoints: decodePolyline(activity.map?.polyline || activity.map?.summary_polyline) });
+        if (result.created) created += 1; else updated += 1;
+      } catch (error) { warnings.push(`Actividad ${activity.id}: ${error.message}`); }
+    }
+    if (activities.length < 100) break;
+    page += 1;
+  }
+  const syncedAt = new Date().toISOString();
+  db.setStravaSyncAt('Miguel Bello', syncedAt);
+  return { provider: 'strava', athlete: 'Miguel Bello', mode, received, created, updated, skipped: 0, warnings, synced_at: syncedAt };
+}
+async function disconnectStrava() {
+  const connection = db.getStravaConnection('Miguel Bello');
+  if (!connection) return;
+  try {
+    requireStravaConfig();
+    const token = decryptSecret(connection.refresh_token);
+    await stravaRequest(`${STRAVA_OAUTH_BASE}/revoke`, { method: 'POST', headers: { Authorization: `Basic ${Buffer.from(`${STRAVA_CLIENT_ID}:${STRAVA_CLIENT_SECRET}`).toString('base64')}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token, token_type_hint: 'refresh_token' }) });
+  } finally { db.disconnectStrava('Miguel Bello'); }
 }
 
 function coachQuery(query) {
@@ -298,10 +478,28 @@ db.init();
 normalizePendingActivities();
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  if (url.pathname.startsWith('/api/')) {
+    if (!setCors(req, res)) return json(res, 403, { error: 'Origen no autorizado.' });
+    if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+  }
+  if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { status: 'ok' });
+  if (req.method === 'GET' && url.pathname === '/api/integrations/strava/status') return json(res, 200, stravaStatus());
+  if (req.method === 'GET' && url.pathname === '/api/integrations/strava/connect') {
+    try { return startStravaConnection(res); } catch (error) { return json(res, 503, { error: error.message }); }
+  }
+  if (req.method === 'GET' && url.pathname === '/api/integrations/strava/callback') return completeStravaConnection(url, res);
+  if (req.method === 'POST' && url.pathname === '/api/integrations/strava/sync') {
+    try { const payload = await jsonBody(req); return json(res, 200, await syncStrava(payload.mode || 'incremental')); }
+    catch (error) { return json(res, 502, { error: error.message }); }
+  }
+  if (req.method === 'DELETE' && url.pathname === '/api/integrations/strava') {
+    try { await disconnectStrava(); return json(res, 200, { provider: 'strava', athlete: 'Miguel Bello', connected: false }); }
+    catch (error) { return json(res, 502, { error: error.message }); }
+  }
   if (req.method === 'GET' && url.pathname === '/api/activities') return json(res, 200, { activities: db.listActivities() });
   if (req.method === 'GET' && url.pathname === '/api/activities/compare') return json(res, 200, { athlete: url.searchParams.get('athlete') || 'Miguel Bello', activities: db.compareActivities(url.searchParams.get('athlete') || 'Miguel Bello', Number(url.searchParams.get('limit') || 4)) });
   const routeMatch = /^\/api\/activities\/(\d+)\/route$/.exec(url.pathname);
-  if (req.method === 'GET' && routeMatch) return json(res, 200, db.getActivityRoute(Number(routeMatch[1])));
+  if (req.method === 'GET' && routeMatch) return json(res, 200, db.getActivityRouteFromSource(Number(routeMatch[1])) || db.getActivityRoute(Number(routeMatch[1])));
   const detailMatch = /^\/api\/activities\/(\d+)$/.exec(url.pathname);
   if (req.method === 'GET' && detailMatch) { const detail = db.getActivityDetail(Number(detailMatch[1])); return detail ? json(res, 200, detail) : json(res, 404, { error: 'Actividad no encontrada.' }); }
   if (req.method === 'POST' && url.pathname === '/api/coach/query') {
@@ -320,4 +518,4 @@ const server = http.createServer(async (req, res) => {
   res.end(content);
 });
 
-server.listen(PORT, '127.0.0.1', () => console.log(`Viking Performance Lab: http://127.0.0.1:${PORT}`));
+server.listen(PORT, HOST, () => console.log(`Viking Performance Lab: http://${HOST}:${PORT}`));

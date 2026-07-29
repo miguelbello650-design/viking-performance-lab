@@ -10,6 +10,11 @@ Reservado. No crear código hasta aprobar requisitos, contratos, arquitectura y 
 - `GET /api/activities/compare?athlete=Miguel%20Bello&limit=4`
 - `POST /api/coach/query`
 - `POST /api/import`
+- `GET /api/integrations/strava/status`
+- `GET /api/integrations/strava/connect`
+- `GET /api/integrations/strava/callback`
+- `POST /api/integrations/strava/sync`
+- `DELETE /api/integrations/strava`
 
 Ejecutar desde la raiz del proyecto:
 
@@ -21,6 +26,12 @@ node 07_BACKEND/server.js
 Abrir `http://127.0.0.1:8766`.
 
 El archivo original se conserva en `09_DATOS_PRUEBA/importados/`.
+
+## Integracion Strava
+
+El piloto usa OAuth2 para conectar unicamente a Miguel Bello. Configura en `.env` las variables de `.env.example`, incluyendo `STRAVA_TOKEN_KEY` con un secreto largo y aleatorio. Los tokens se cifran antes de guardarse en SQLite.
+
+Configura en Strava el callback exactamente como `STRAVA_REDIRECT_URI`. La primera sincronizacion usa los ultimos 12 meses; las siguientes son incrementales y se ejecutan desde el panel.
 
 FIT/FIT.gz se descomprime y extrae automaticamente en mensajes observados. El copiloto inicial responde inventario, comparacion contextual y comprobacion condicionada de eficiencia aerobica. Las reglas separan datos observados, calculos, interpretacion e hipotesis; no generan recomendaciones automaticas.
 

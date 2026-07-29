@@ -1,7 +1,8 @@
 {
   "private": true,
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "check": "node -e \"const fs=require('fs'); new Function(fs.readFileSync('server.js','utf8')); new Function(fs.readFileSync('db.js','utf8')); console.log('backend-js-ok')\""
   },
   "dependencies": {
     "better-sqlite3": "^12.10.0"

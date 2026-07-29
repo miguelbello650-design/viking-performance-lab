@@ -16,6 +16,8 @@ Fase 2 — Construccion del MVP
 
 ## Estado
 El front ya incorpora una primera interfaz de copiloto del entrenador conectada al API; actualmente responde comparaciones basadas en evidencia y declara limites cuando no existe una regla analitica aprobada.
+El backend local esta operativo con Strava conectado para Miguel Bello y 454 actividades disponibles. El siguiente trabajo es conectar el frontend oficial de Lovable al contrato API mediante `VITE_API_BASE_URL`; la publicacion requiere primero un backend seguro y una URL publica definida.
+Lovable ya incorporo el adaptador API, panel de Strava, estados de carga/vacio/error y prioridad de `VITE_API_BASE_URL` sobre el mock. La interfaz publicada aun no puede leer la SQLite local hasta desplegar el backend con una URL publica segura.
 La regla comparison-context-v1 agrega una interpretacion contextual limitada y una hipotesis explicita; no genera recomendaciones automaticas.
 La regla aerobic-efficiency-v1 queda implementada de forma condicionada: con los archivos actuales declara insuficiencia porque no hay velocidad media observada en ambas actividades.
 La Regla 003 de señales de fatiga contextual fue aprobada y se visualizará primero mediante gráficas de evidencia; su interpretación seguirá sujeta a revisión del entrenador.
@@ -79,5 +81,29 @@ La construccion del MVP esta autorizada. SQLite queda definido como persistencia
 - Metricas y umbrales definitivos
 - Automatizaciones externas
 
+## Nota de la transferencia visual Lovable → local
+
+- Se trasladaron patrones visuales al front local sin sustituir Node, SQLite ni Leaflet: fuente local, jerarquía de copiloto y cadena de lectura en cinco capas.
+- Se conservaron fuera del producto los datos demo y las métricas ficticias de Lovable.
+- Se adaptó la composición completa del laboratorio: hero del copiloto, contexto de atleta, estados locales, navegación al análisis y disposición paralela de asistente/comparador.
+
+## Nueva división de trabajo aprobada
+
+- Lovable será el constructor del frontend completo.
+- El repositorio local mantendrá Node.js, SQLite, importaciones, normalización, análisis, asistente y seguridad.
+- El contrato oficial de integración queda en `02_REQUISITOS/CONTRATO_API_FRONTEND.md`.
+- Lovable trabajará con mock data compatible; los FIT y la SQLite permanecerán fuera de Lovable.
+- Enviada a Lovable la instrucción de reconstruir el frontend oficial con adaptador `VITE_API_BASE_URL`, estados completos y mock data compatible con el contrato. Mensaje: `umsg_01kypzp1j1fndajctcvgc7jb08`.
+- Lovable terminó la construcción del frontend oficial. Commit `5b4fe4a8d4e7ed787b897699088c195dc0a9fe66`; creó `src/lib/api/` con cliente, tipos, queries y mock, además de paneles de importación/listado y estados de interfaz.
+- Publicación visual disponible en `https://vikingcoach.lovable.app`; contiene datos mock y no tiene conexión con la SQLite local.
+- Añadido CORS controlado por `FRONTEND_ORIGINS`; por defecto solo permite los orígenes locales y requiere configurar explícitamente el dominio público antes de conectar Lovable.
+- Preparación mínima para despliegue: `HOST`, `VPL_DATA_DIR` y endpoint `GET /health`; la SQLite y los archivos importados pueden vivir en un volumen persistente fuera del repositorio.
+- No se publica todavía la base personal: falta definir autenticación antes de conectar una API pública con datos reales.
+
 ## Siguiente paso permitido
-Continuar la iteración del chat, contexto, visualizaciones y respuestas locales; habilitar cuota API solo cuando el usuario lo decida.
+
+Cambio de arquitectura solicitado: definir y aprobar el contrato Strava y el alcance de sincronizacion antes de programar; despues adaptar el frontend de Lovable para conexion/sincronizacion en lugar de carga manual. Ver `02_REQUISITOS/INTEGRACION_STRAVA_MVP.md`.
+Piloto aprobado: unico atleta Miguel Bello, alcance solicitado `activity:read_all`, historial inicial de 12 meses y sincronizacion incremental manual. Contrato en `02_REQUISITOS/CONTRATO_STRAVA_MVP.md`.
+Implementacion inicial del backend Strava completada: OAuth2, estado, callback, tokens cifrados, sincronizacion idempotente, desconexion y rutas desde polyline. El frontend aun no esta conectado.
+Primera sincronizacion real completada el 2026-07-29: 450 actividades recibidas y 450 creadas para Miguel Bello, sin advertencias reportadas.
+Backend reiniciado y verificado: `/health` responde correctamente, Strava permanece conectado y el listado devuelve 454 actividades totales (450 Strava + 4 archivos historicos). Se optimizo la consulta agregada de mensajes para evitar bloqueos con historiales grandes.

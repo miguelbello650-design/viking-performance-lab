@@ -1,7 +1,8 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 
-const db = new Database(path.join(__dirname, 'viking.db'));
+const dataDir = process.env.VPL_DATA_DIR || __dirname;
+const db = new Database(path.join(dataDir, 'viking.db'));
 db.pragma('journal_mode = WAL');
 
 function init() {
@@ -46,7 +47,31 @@ function init() {
       timestamp TEXT,
       fields_json TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS strava_connections (
+      athlete_id INTEGER PRIMARY KEY REFERENCES athletes(id),
+      strava_athlete_id TEXT NOT NULL UNIQUE,
+      access_token TEXT NOT NULL,
+      refresh_token TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      scopes_json TEXT NOT NULL DEFAULT '[]',
+      connected_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      last_sync_at TEXT,
+      status TEXT NOT NULL DEFAULT 'connected'
+    );
+    CREATE TABLE IF NOT EXISTS activity_routes (
+      activity_id INTEGER PRIMARY KEY REFERENCES activities(id),
+      points_json TEXT NOT NULL DEFAULT '[]',
+      source_format TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
+  const activityColumns = db.prepare('PRAGMA table_info(activities)').all().map(column => column.name);
+  if (!activityColumns.includes('source_provider')) db.exec("ALTER TABLE activities ADD COLUMN source_provider TEXT NOT NULL DEFAULT 'file'");
+  if (!activityColumns.includes('source_activity_id')) db.exec('ALTER TABLE activities ADD COLUMN source_activity_id TEXT');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS activities_source_activity_idx ON activities(source_provider, source_activity_id) WHERE source_activity_id IS NOT NULL');
+  db.exec('CREATE INDEX IF NOT EXISTS activity_messages_activity_idx ON activity_messages(activity_id, message_type)');
+  db.exec('CREATE INDEX IF NOT EXISTS activity_routes_activity_idx ON activity_routes(activity_id)');
   db.prepare('INSERT OR IGNORE INTO athletes(name, created_at) VALUES (?, ?)').run('Miguel Bello', new Date().toISOString());
 }
 
@@ -55,8 +80,12 @@ function listActivities() {
     SELECT activities.id, athletes.name AS athlete, sport, kind,
            original_filename, file_size, import_status,
            normalization_status, activities.created_at,
-           (SELECT COUNT(*) FROM activity_messages m WHERE m.activity_id = activities.id) AS message_count
+           COALESCE(messages.message_count, 0) AS message_count,
+           source_provider,
+           CASE WHEN routes.activity_id IS NULL THEN 0 ELSE 1 END AS has_route
     FROM activities JOIN athletes ON athletes.id = activities.athlete_id
+    LEFT JOIN (SELECT activity_id, COUNT(*) AS message_count FROM activity_messages GROUP BY activity_id) messages ON messages.activity_id = activities.id
+    LEFT JOIN (SELECT DISTINCT activity_id FROM activity_routes) routes ON routes.activity_id = activities.id
     ORDER BY activities.id DESC
   `).all();
 }
@@ -142,4 +171,77 @@ function compareActivities(athlete, limit = 4) {
   return rows;
 }
 
-module.exports = { db, init, listActivities, findAthlete, findDuplicate, insertActivity, setStoredPath, deleteActivity, listPendingActivities, listActivitiesWithoutMessages, recordNormalization, replaceMessages, getActivityDetail, getActivityRoute, compareActivities };
+function getStravaConnection(athleteName) {
+  return db.prepare(`SELECT sc.*, a.name AS athlete FROM strava_connections sc JOIN athletes a ON a.id = sc.athlete_id WHERE a.name = ?`).get(athleteName);
+}
+function saveStravaConnection(data) {
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO strava_connections
+    (athlete_id, strava_athlete_id, access_token, refresh_token, expires_at, scopes_json, connected_at, updated_at, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'connected')
+    ON CONFLICT(athlete_id) DO UPDATE SET strava_athlete_id = excluded.strava_athlete_id,
+      access_token = excluded.access_token, refresh_token = excluded.refresh_token,
+      expires_at = excluded.expires_at, scopes_json = excluded.scopes_json,
+      updated_at = excluded.updated_at, status = 'connected'`).run(
+    data.athleteId, String(data.stravaAthleteId), data.accessToken, data.refreshToken,
+    Number(data.expiresAt), JSON.stringify(data.scopes || []), now, now
+  );
+}
+function updateStravaTokens(athleteName, data) {
+  const now = new Date().toISOString();
+  db.prepare(`UPDATE strava_connections SET access_token = ?, refresh_token = ?, expires_at = ?, updated_at = ?, status = 'connected' WHERE athlete_id = (SELECT id FROM athletes WHERE name = ?)`)
+    .run(data.accessToken, data.refreshToken, Number(data.expiresAt), now, athleteName);
+}
+function setStravaSyncAt(athleteName, timestamp) {
+  db.prepare(`UPDATE strava_connections SET last_sync_at = ?, updated_at = ? WHERE athlete_id = (SELECT id FROM athletes WHERE name = ?)`)
+    .run(timestamp, new Date().toISOString(), athleteName);
+}
+function disconnectStrava(athleteName) {
+  db.prepare(`DELETE FROM strava_connections WHERE athlete_id = (SELECT id FROM athletes WHERE name = ?)`)
+    .run(athleteName);
+}
+function stravaActivityExists(stravaActivityId) {
+  return db.prepare("SELECT id FROM activities WHERE source_provider = 'strava_api' AND source_activity_id = ?").get(String(stravaActivityId));
+}
+function upsertStravaActivity(data) {
+  const existing = stravaActivityExists(data.stravaActivityId);
+  const fields = data.fields || {};
+  const filename = `strava:${data.stravaActivityId}`;
+  const sha256 = `strava:${data.stravaActivityId}`;
+  const sport = data.sport || 'unknown';
+  const kind = data.kind || 'Entrenamiento';
+  const now = new Date().toISOString();
+  let activityId;
+  if (existing) {
+    activityId = existing.id;
+    db.prepare(`UPDATE activities SET sport = ?, kind = ?, original_filename = ?, normalization_status = 'normalized', created_at = ? WHERE id = ?`).run(sport, kind, filename, data.startDate || now, activityId);
+  } else {
+    const result = db.prepare(`INSERT INTO activities
+      (athlete_id, sport, kind, original_filename, stored_path, file_extension, file_size, sha256,
+       import_status, normalization_status, created_at, source_provider, source_activity_id)
+      VALUES (?, ?, ?, ?, '', 'strava', 0, ?, 'accepted', 'normalized', ?, 'strava_api', ?)`).run(
+      data.athleteId, sport, kind, filename, sha256, data.startDate || now, String(data.stravaActivityId)
+    );
+    activityId = Number(result.lastInsertRowid);
+  }
+  const sessionFields = Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, { raw: value, value }]));
+  db.prepare("DELETE FROM activity_messages WHERE activity_id = ? AND message_type = 'session'").run(activityId);
+  const insert = db.prepare(`INSERT OR REPLACE INTO activity_messages
+    (activity_id, message_index, global_message_num, message_type, timestamp, fields_json)
+    VALUES (?, 0, 18, 'session', ?, ?)`);
+  insert.run(activityId, data.startDate || null, JSON.stringify(sessionFields));
+  db.prepare(`INSERT OR REPLACE INTO activity_normalization
+    (activity_id, file_format, raw_size, validation_status, warnings_json, observed_json, normalized_at)
+    VALUES (?, 'Strava API', 0, 'normalized', ?, ?, ?)`).run(activityId, JSON.stringify(data.warnings || []), JSON.stringify({ source_provider: 'strava_api', strava_activity_id: String(data.stravaActivityId) }), now);
+  if (Array.isArray(data.routePoints)) db.prepare(`INSERT OR REPLACE INTO activity_routes (activity_id, points_json, source_format, updated_at) VALUES (?, ?, 'strava_polyline', ?)`).run(activityId, JSON.stringify(data.routePoints), now);
+  return { id: activityId, created: !existing };
+}
+function getActivityRouteFromSource(id, maxPoints = 1200) {
+  const row = db.prepare('SELECT points_json, source_format FROM activity_routes WHERE activity_id = ?').get(id);
+  if (!row) return null;
+  const points = JSON.parse(row.points_json || '[]');
+  const step = Math.max(1, Math.ceil(points.length / maxPoints));
+  return { observed_point_count: points.length, source_format: row.source_format, points: points.filter((_, index) => index % step === 0) };
+}
+
+module.exports = { db, init, listActivities, findAthlete, findDuplicate, insertActivity, setStoredPath, deleteActivity, listPendingActivities, listActivitiesWithoutMessages, recordNormalization, replaceMessages, getActivityDetail, getActivityRoute, getActivityRouteFromSource, compareActivities, getStravaConnection, saveStravaConnection, updateStravaTokens, setStravaSyncAt, disconnectStrava, upsertStravaActivity };
