@@ -271,12 +271,18 @@ async function syncStrava(mode = 'incremental') {
   const connection = db.getStravaConnection('Miguel Bello');
   if (!connection) throw new Error('Strava no está conectado para Miguel Bello.');
   const accessToken = await ensureStravaToken(connection);
-  const afterDate = mode === 'initial' ? new Date(Date.now() - 365 * 24 * 60 * 60 * 1000) : (connection.last_sync_at ? new Date(connection.last_sync_at) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+  const isFull = mode === 'full';
+  const afterDate = mode === 'initial'
+    ? new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)
+    : (connection.last_sync_at
+      ? new Date(new Date(connection.last_sync_at).getTime() - 24 * 60 * 60 * 1000)
+      : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
   const after = Math.floor(afterDate.getTime() / 1000);
   let page = 1, received = 0, created = 0, updated = 0;
   const warnings = [];
-  while (page <= 20) {
-    const query = new URLSearchParams({ after: String(after), page: String(page), per_page: '100' });
+  while (isFull || page <= 20) {
+    const query = new URLSearchParams({ page: String(page), per_page: '100' });
+    if (!isFull) query.set('after', String(after));
     const activities = await stravaRequest(`${STRAVA_API_BASE}/athlete/activities?${query}`, { headers: { Authorization: `Bearer ${accessToken}` } });
     if (!Array.isArray(activities) || !activities.length) break;
     for (const activity of activities) {
@@ -296,10 +302,11 @@ async function syncStrava(mode = 'incremental') {
           max_power: activity.max_watts,
           total_ascent: activity.total_elevation_gain,
           total_descent: null,
+          name: activity.name,
           sport: mapStravaSport(activity),
           sub_sport: activity.sport_type || activity.type || null
         };
-        const result = db.upsertStravaActivity({ athleteId: db.findAthlete('Miguel Bello').id, stravaActivityId: activity.id, sport: mapStravaSport(activity), kind: mapStravaKind(activity), startDate: activity.start_date, fields, routePoints: decodePolyline(activity.map?.polyline || activity.map?.summary_polyline) });
+        const result = db.upsertStravaActivity({ athleteId: db.findAthlete('Miguel Bello').id, stravaActivityId: activity.id, name: activity.name, sport: mapStravaSport(activity), kind: mapStravaKind(activity), startDate: activity.start_date, fields, routePoints: decodePolyline(activity.map?.polyline || activity.map?.summary_polyline) });
         if (result.created) created += 1; else updated += 1;
       } catch (error) { warnings.push(`Actividad ${activity.id}: ${error.message}`); }
     }

@@ -206,7 +206,7 @@ function stravaActivityExists(stravaActivityId) {
 function upsertStravaActivity(data) {
   const existing = stravaActivityExists(data.stravaActivityId);
   const fields = data.fields || {};
-  const filename = `strava:${data.stravaActivityId}`;
+  const filename = String(data.name || `strava:${data.stravaActivityId}`);
   const sha256 = `strava:${data.stravaActivityId}`;
   const sport = data.sport || 'unknown';
   const kind = data.kind || 'Entrenamiento';

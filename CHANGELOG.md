@@ -1,6 +1,8 @@
 # Changelog
 
 ## 2026-07-29
+- Organizada la navegacion del frontend oficial en Lovable: las seis secciones laterales ahora tienen vistas funcionales, estados de carga/vacio/error y foco accesible; se conservaron API real, filtros y datos sincronizados. Publicacion actualizada en `https://vikingcoach.lovable.app`.
+- Ajustada la sincronizacion Strava: nuevo modo manual `full` para recuperar todo el historial, solapamiento de 24 horas en incrementales y conservacion del nombre exacto de la actividad de Strava. Frontend pendiente de publicar junto con el backend.
 - Cambio de arquitectura del MVP: Strava pasa a ser la fuente primaria via API/OAuth2; la carga FIT/GPX/TCX/CSV queda fuera del flujo principal. Se documento en `02_REQUISITOS/INTEGRACION_STRAVA_MVP.md`.
 - Cerrado el contrato Strava del piloto: Miguel Bello como unico atleta, `activity:read_all`, historial inicial de 12 meses y sincronizacion incremental manual.
 - Implementado el primer vertical backend Strava: OAuth2, tokens cifrados, sincronizacion idempotente por `strava_activity_id`, persistencia de rutas y desconexion segura. Falta conectar el frontend.
@@ -15,6 +17,7 @@
 - Actualizado el contrato frontend con las rutas Strava operativas, el flujo OAuth2/sincronizacion y la configuracion pendiente de `VITE_API_BASE_URL` para Lovable.
 - Lovable implemento el adaptador API real, panel de sincronizacion Strava y refresco de actividades, comparaciones, rutas y asistente; mantiene mock solo cuando `VITE_API_BASE_URL` no esta configurada.
 - Corregido el bind de red para Render: cuando existe `PORT`, el backend usa `0.0.0.0`; en local conserva `127.0.0.1`.
+- Backend publicado en Render con commit `1ede1e3`; `/health` responde correctamente. Pendiente autorizar Strava en el entorno publico y configurar Lovable con `VITE_API_BASE_URL`.
 
 ## 2026-07-28
 - Publicado el repositorio en GitHub sin SQLite ni archivos FIT personales; reforzado `.gitignore` para excluir datos deportivos, GPS y credenciales.

@@ -61,7 +61,8 @@ El backend valida `state`, intercambia el codigo en Strava, valida los scopes co
 Valores de `mode`:
 
 - `initial`: ultimos 12 meses.
-- `incremental`: actividades nuevas o modificadas desde la ultima sincronizacion exitosa.
+- `incremental`: actividades nuevas o modificadas desde la ultima sincronizacion exitosa, con una ventana de solapamiento de 24 horas para no perder actividades por diferencia de reloj o zona horaria.
+- `full`: recupera todo el historial disponible autorizado por Strava mediante paginacion. Es una operacion manual de recuperacion y puede tardar mas; no se ejecuta automaticamente.
 
 Respuesta minima:
 
