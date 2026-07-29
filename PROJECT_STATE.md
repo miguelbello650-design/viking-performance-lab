@@ -1,5 +1,7 @@
 # Estado del proyecto
 
+El perfil aprendido ahora genera patrones candidatos por disciplina a partir de relaciones observadas entre velocidad, frecuencia cardiaca y desnivel relativo. Cada patron conserva actividades de evidencia, metrica, confianza y estado candidate/confirmed/rejected; el entrenador puede validar o rechazarlo mediante API antes de que oriente recomendaciones.
+
 Los informes generativos por actividad se guardan en SQLite mediante `ai_activity_reports`, asociados a la actividad y a la version del informe. El asistente devuelve el informe cacheado sin consumir OpenAI; la regeneracion queda como accion explicita del entrenador.
 
 La actividad seleccionada puede enriquecerse bajo demanda con el detalle oficial de Strava, esfuerzos, vueltas, mejores esfuerzos, splits, zonas y streams detallados. El enriquecimiento queda cacheado en SQLite y se ejecuta al generar el informe para evitar agotar los limites de lectura durante una sincronizacion masiva.

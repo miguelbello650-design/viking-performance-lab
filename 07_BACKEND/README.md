@@ -10,6 +10,8 @@ Reservado. No crear código hasta aprobar requisitos, contratos, arquitectura y 
 - `POST /api/activities/:id/enrich`
 - `GET /api/activities/:id/report`
 - `GET /api/athletes/:name/profile`
+- `GET /api/athletes/:name/patterns`
+- `PATCH /api/athlete-learning-patterns/:id`
 - `GET /api/activities/compare?athlete=Miguel%20Bello&limit=4`
 - `POST /api/coach/query`
 - `POST /api/import`

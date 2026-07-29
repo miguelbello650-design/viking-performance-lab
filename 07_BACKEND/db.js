@@ -84,6 +84,21 @@ function init() {
       updated_at TEXT NOT NULL,
       PRIMARY KEY (activity_id, report_key)
     );
+    CREATE TABLE IF NOT EXISTS athlete_learning_patterns (
+      id INTEGER PRIMARY KEY,
+      athlete_id INTEGER NOT NULL REFERENCES athletes(id),
+      discipline TEXT NOT NULL,
+      pattern_key TEXT NOT NULL,
+      statement TEXT NOT NULL,
+      evidence_json TEXT NOT NULL DEFAULT '[]',
+      metrics_json TEXT NOT NULL DEFAULT '{}',
+      confidence REAL NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'candidate' CHECK(status IN ('candidate', 'confirmed', 'rejected')),
+      coach_note TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(athlete_id, discipline, pattern_key)
+    );
   `);
   const activityColumns = db.prepare('PRAGMA table_info(activities)').all().map(column => column.name);
   if (!activityColumns.includes('source_provider')) db.exec("ALTER TABLE activities ADD COLUMN source_provider TEXT NOT NULL DEFAULT 'file'");
@@ -379,6 +394,54 @@ function saveAiActivityReport(activityId, report, model, reportKey = 'activity_r
     .run(activityId, reportKey, model || null, JSON.stringify(report || {}), now, now);
   return { ...report, model: model || null, created_at: now, updated_at: now, cached: false };
 }
+function correlation(pairs) {
+  if (pairs.length < 5) return null;
+  const mean = values => values.reduce((sum, value) => sum + value, 0) / values.length;
+  const xs = pairs.map(pair => pair[0]);
+  const ys = pairs.map(pair => pair[1]);
+  const mx = mean(xs); const my = mean(ys);
+  const numerator = pairs.reduce((sum, pair) => sum + (pair[0] - mx) * (pair[1] - my), 0);
+  const denominator = Math.sqrt(xs.reduce((sum, value) => sum + (value - mx) ** 2, 0) * ys.reduce((sum, value) => sum + (value - my) ** 2, 0));
+  return denominator ? numerator / denominator : null;
+}
+function refreshAthleteLearningPatterns(name) {
+  const athlete = db.prepare('SELECT id, name FROM athletes WHERE name = ?').get(name);
+  if (!athlete) return [];
+  const rows = db.prepare(`SELECT a.id, a.sport FROM activities a JOIN activity_normalization n ON n.activity_id = a.id WHERE a.athlete_id = ? AND a.normalization_status = 'normalized'`).all(athlete.id);
+  const grouped = new Map();
+  rows.forEach(row => {
+    const detail = getActivityDetail(row.id);
+    const fields = detail?.session?.fields || {};
+    const number = key => Number(fields[key]?.value);
+    const item = { id: row.id, speed: number('avg_speed'), heartRate: number('avg_heart_rate'), ascent: number('total_ascent'), distance: number('total_distance') };
+    if (!grouped.has(row.sport)) grouped.set(row.sport, []);
+    grouped.get(row.sport).push(item);
+  });
+  const now = new Date().toISOString();
+  const upsert = db.prepare(`INSERT INTO athlete_learning_patterns (athlete_id, discipline, pattern_key, statement, evidence_json, metrics_json, confidence, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'candidate', ?, ?)
+    ON CONFLICT(athlete_id, discipline, pattern_key) DO UPDATE SET statement = excluded.statement, evidence_json = excluded.evidence_json, metrics_json = excluded.metrics_json, confidence = excluded.confidence, updated_at = excluded.updated_at`);
+  const savePattern = (discipline, key, statement, evidence, metrics) => upsert.run(athlete.id, discipline, key, statement, JSON.stringify(evidence), JSON.stringify(metrics), Math.min(0.95, 0.5 + Math.abs(metrics.correlation || 0) * 0.4), now, now);
+  grouped.forEach((items, discipline) => {
+    const speedHr = items.filter(item => Number.isFinite(item.speed) && Number.isFinite(item.heartRate));
+    const speedAscent = items.filter(item => Number.isFinite(item.speed) && Number.isFinite(item.ascent) && Number.isFinite(item.distance) && item.distance > 0);
+    const hrCorrelation = correlation(speedHr.map(item => [item.speed, item.heartRate]));
+    if (hrCorrelation !== null && Math.abs(hrCorrelation) >= 0.6) savePattern(discipline, 'speed-heart-rate', `En ${speedHr.length} actividades de ${discipline} se observa una relaciÃ³n ${hrCorrelation > 0 ? 'positiva' : 'negativa'} entre velocidad media y frecuencia cardiaca media. Es un patrÃ³n candidato, no una causa confirmada.`, speedHr.map(item => item.id), { correlation: hrCorrelation, evidence_count: speedHr.length });
+    const ascentCorrelation = correlation(speedAscent.map(item => [item.ascent / item.distance, item.speed]));
+    if (ascentCorrelation !== null && Math.abs(ascentCorrelation) >= 0.6) savePattern(discipline, 'ascent-speed', `En ${speedAscent.length} actividades de ${discipline} se observa una relaciÃ³n ${ascentCorrelation > 0 ? 'positiva' : 'negativa'} entre desnivel relativo y velocidad media. Es un patrÃ³n candidato, no una causa confirmada.`, speedAscent.map(item => item.id), { correlation: ascentCorrelation, evidence_count: speedAscent.length });
+  });
+  return getAthleteLearningPatterns(name);
+}
+function getAthleteLearningPatterns(name) {
+  const athlete = db.prepare('SELECT id FROM athletes WHERE name = ?').get(name);
+  if (!athlete) return [];
+  return db.prepare('SELECT id, discipline, pattern_key, statement, evidence_json, metrics_json, confidence, status, coach_note, created_at, updated_at FROM athlete_learning_patterns WHERE athlete_id = ? ORDER BY updated_at DESC').all(athlete.id).map(row => ({ ...row, evidence: JSON.parse(row.evidence_json || '[]'), metrics: JSON.parse(row.metrics_json || '{}'), evidence_json: undefined, metrics_json: undefined }));
+}
+function updateAthleteLearningPattern(id, status, coachNote) {
+  if (!['candidate', 'confirmed', 'rejected'].includes(status)) throw new Error('Estado de patrón no válido.');
+  db.prepare('UPDATE athlete_learning_patterns SET status = ?, coach_note = ?, updated_at = ? WHERE id = ?').run(status, coachNote || null, new Date().toISOString(), id);
+  return db.prepare('SELECT id, discipline, pattern_key, statement, evidence_json, metrics_json, confidence, status, coach_note, created_at, updated_at FROM athlete_learning_patterns WHERE id = ?').get(id);
+}
 function replaceStravaStreams(activityId, streams, startDate) {
   const source = streams && typeof streams === 'object' ? streams : {};
   const length = Math.max(0, ...Object.values(source).map(stream => Array.isArray(stream?.data) ? stream.data.length : 0));
@@ -420,4 +483,4 @@ function getActivityRouteFromSource(id, maxPoints = 1200) {
   return { observed_point_count: points.length, source_format: row.source_format, points: points.filter((_, index) => index % step === 0) };
 }
 
-module.exports = { db, init, listActivities, findAthlete, getAthleteLearningProfile, findDuplicate, insertActivity, setStoredPath, deleteActivity, listPendingActivities, listActivitiesWithoutMessages, recordNormalization, replaceMessages, getActivityDetail, getActivityAnalysisContext, getActivityRoute, getActivityRouteFromSource, compareActivities, getStravaConnection, saveStravaConnection, updateStravaTokens, setStravaSyncAt, disconnectStrava, upsertStravaActivity, hasActivityRecords, replaceStravaStreams, getStravaActivityDetail, saveStravaActivityDetail, getAiActivityReport, saveAiActivityReport };
+module.exports = { db, init, listActivities, findAthlete, getAthleteLearningProfile, refreshAthleteLearningPatterns, getAthleteLearningPatterns, updateAthleteLearningPattern, findDuplicate, insertActivity, setStoredPath, deleteActivity, listPendingActivities, listActivitiesWithoutMessages, recordNormalization, replaceMessages, getActivityDetail, getActivityAnalysisContext, getActivityRoute, getActivityRouteFromSource, compareActivities, getStravaConnection, saveStravaConnection, updateStravaTokens, setStravaSyncAt, disconnectStrava, upsertStravaActivity, hasActivityRecords, replaceStravaStreams, getStravaActivityDetail, saveStravaActivityDetail, getAiActivityReport, saveAiActivityReport };

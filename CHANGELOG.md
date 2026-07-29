@@ -1,6 +1,9 @@
 # Changelog
 
 ## 2026-07-29
+- Implementados patrones aprendidos multiatleta por disciplina, con evidencia, confianza y estados candidato/confirmado/rechazado. Añadidos endpoints para consultar patrones y registrar la validación del entrenador; el asistente recibe estos patrones como contexto personal.
+
+## 2026-07-29
 - Añadida persistencia de informes IA por actividad en SQLite. El informe se reutiliza en consultas posteriores y se expone mediante `GET /api/activities/:id/report`, reduciendo consumo de OpenAI.
 
 ## 2026-07-29
