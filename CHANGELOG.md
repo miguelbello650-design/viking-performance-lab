@@ -1,6 +1,9 @@
 # Changelog
 
 ## 2026-07-29
+- Ampliado el contexto analítico del informe IA con cambios entre el primer y último 20% de registros, velocidad, FC, cadencia y ascenso/descenso derivados de datos observados. Ajustado el prompt para priorizar hallazgos accionables y trazables, no una repetición de métricas.
+
+## 2026-07-29
 - Corregida la salida del informe generativo: interpretación, hipótesis y recomendación se normalizan a texto legible; `calculations` se entrega como arreglo de textos y se preservan las limitaciones cuando no hay datos suficientes.
 
 ## 2026-07-29

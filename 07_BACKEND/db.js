@@ -152,6 +152,37 @@ function getActivityAnalysisContext(id, maxSamples = 600) {
       altitude_m: pick(['altitude', 'enhanced_altitude', 'field_2'])
     };
   });
+  const numeric = (record, key) => Number(record[key]?.value);
+  const segment = (items, label) => {
+    const values = items.map(item => numeric(item, label)).filter(Number.isFinite);
+    return values.length ? { samples: values.length, mean: values.reduce((sum, value) => sum + value, 0) / values.length, first: values[0], last: values[values.length - 1] } : null;
+  };
+  const split = Math.max(1, Math.floor(records.length / 5));
+  const first = records.slice(0, split);
+  const last = records.slice(-split);
+  const firstSpeed = segment(first, 'speed_mps');
+  const lastSpeed = segment(last, 'speed_mps');
+  const firstHeartRate = segment(first, 'heart_rate_bpm');
+  const lastHeartRate = segment(last, 'heart_rate_bpm');
+  const firstCadence = segment(first, 'cadence_rpm');
+  const lastCadence = segment(last, 'cadence_rpm');
+  const changes = (start, end) => start && end && start.mean !== 0 ? { absolute: end.mean - start.mean, percent: ((end.mean - start.mean) / start.mean) * 100 } : null;
+  const altitudeValues = records.map(record => numeric(record, 'altitude_m')).filter(Number.isFinite);
+  let ascent = 0;
+  let descent = 0;
+  for (let index = 1; index < altitudeValues.length; index += 1) {
+    const delta = altitudeValues[index] - altitudeValues[index - 1];
+    if (delta > 0) ascent += delta;
+    if (delta < 0) descent += Math.abs(delta);
+  }
+  const derived = {
+    method: 'Comparación descriptiva entre el primer y último 20% de registros muestreados; no es una regla clínica ni un umbral universal.',
+    data_sufficiency: { record_count: detail.record_count, sampled: records.length, speed_samples: [firstSpeed, lastSpeed].filter(Boolean).length, heart_rate_samples: [firstHeartRate, lastHeartRate].filter(Boolean).length, cadence_samples: [firstCadence, lastCadence].filter(Boolean).length, altitude_samples: altitudeValues.length },
+    first_20_percent: { speed_mps: firstSpeed, heart_rate_bpm: firstHeartRate, cadence_rpm: firstCadence },
+    last_20_percent: { speed_mps: lastSpeed, heart_rate_bpm: lastHeartRate, cadence_rpm: lastCadence },
+    changes_first_to_last_20_percent: { speed_mps: changes(firstSpeed, lastSpeed), heart_rate_bpm: changes(firstHeartRate, lastHeartRate), cadence_rpm: changes(firstCadence, lastCadence) },
+    altitude_from_records: altitudeValues.length > 1 ? { ascent_m: ascent, descent_m: descent } : null
+  };
   return {
     activity: detail.activity,
     normalization: detail.normalization,
@@ -160,7 +191,8 @@ function getActivityAnalysisContext(id, maxSamples = 600) {
     events: detail.events,
     record_count: detail.record_count,
     records_sampled: records.length,
-    records
+    records,
+    derived
   };
 }
 function routeCoordinate(item) {

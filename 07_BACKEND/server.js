@@ -46,6 +46,7 @@ const ASSISTANT_SYSTEM_PROMPT = [
   'Responde primero de forma directa y luego separa evidencia, cálculos, interpretación, hipótesis, limitaciones y recomendación cuando corresponda.',
   'Devuelve únicamente JSON válido con las claves answer, interpretation, hypothesis, recommendation y limitation.',
   'En informes de actividad incluye calculations como arreglo de textos: solo cálculos derivados verificables (por ejemplo ritmo por segmento, variación porcentual o diferencia entre tramos) y, si faltan registros suficientes, indica que no es calculable. Las capas interpretation, hypothesis y recommendation deben ser texto, nunca objetos.',
+  'Tu trabajo no es repetir el tablero. Conecta los datos y los cambios derivados para explicar qué ocurrió, por qué podría haber ocurrido y qué debería revisar el entrenador. Prioriza hallazgos accionables: salida, sostenimiento del esfuerzo, desaceleración, respuesta cardíaca, cadencia, ascensos, descensos y diferencias frente al historial. Cada afirmación debe citar o poder rastrearse a una evidencia o cálculo recibido.',
 ].join(' ');
 
 function json(res, status, payload) {
