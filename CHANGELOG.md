@@ -1,6 +1,9 @@
 # Changelog
 
 ## 2026-07-29
+- Corregida la sincronizacion detallada de Strava: se solicitan y persisten streams de tiempo, distancia, altitud, velocidad, FC, cadencia y potencia cuando estan disponibles. Las actividades sin streams conservan su resumen y generan una advertencia trazable.
+
+## 2026-07-29
 - Creado el perfil de aprendizaje multiatleta en SQLite, con líneas base por disciplina, evidencia, periodo, estado de suficiencia y endpoint `GET /api/athletes/:name/profile`. El asistente incorpora el perfil del atleta seleccionado en su contexto.
 
 ## 2026-07-29

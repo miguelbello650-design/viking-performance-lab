@@ -337,6 +337,40 @@ function upsertStravaActivity(data) {
   if (Array.isArray(data.routePoints)) db.prepare(`INSERT OR REPLACE INTO activity_routes (activity_id, points_json, source_format, updated_at) VALUES (?, ?, 'strava_polyline', ?)`).run(activityId, JSON.stringify(data.routePoints), now);
   return { id: activityId, created: !existing };
 }
+function hasActivityRecords(activityId) {
+  return db.prepare("SELECT 1 FROM activity_messages WHERE activity_id = ? AND message_type = 'record' LIMIT 1").get(activityId) != null;
+}
+function replaceStravaStreams(activityId, streams, startDate) {
+  const source = streams && typeof streams === 'object' ? streams : {};
+  const length = Math.max(0, ...Object.values(source).map(stream => Array.isArray(stream?.data) ? stream.data.length : 0));
+  if (!length) return 0;
+  const read = (key, index) => source[key]?.data?.[index];
+  const toField = value => value === undefined || value === null ? null : { raw: value, value };
+  const insert = db.prepare(`INSERT OR REPLACE INTO activity_messages
+    (activity_id, message_index, global_message_num, message_type, timestamp, fields_json)
+    VALUES (?, ?, 20, 'record', ?, ?)`);
+  const rows = [];
+  for (let index = 0; index < length; index += 1) {
+    const time = read('time', index);
+    const fields = {
+      distance: toField(read('distance', index)),
+      elapsed_time: toField(time),
+      speed: toField(read('velocity_smooth', index)),
+      heart_rate: toField(read('heartrate', index)),
+      cadence: toField(read('cadence', index)),
+      power: toField(read('watts', index)),
+      altitude: toField(read('altitude', index))
+    };
+    Object.keys(fields).forEach(key => { if (!fields[key]) delete fields[key]; });
+    const timestamp = Number.isFinite(Number(time)) && startDate ? new Date(new Date(startDate).getTime() + Number(time) * 1000).toISOString() : startDate || null;
+    rows.push([activityId, index + 1, timestamp, JSON.stringify(fields)]);
+  }
+  db.transaction(() => {
+    db.prepare("DELETE FROM activity_messages WHERE activity_id = ? AND message_type = 'record'").run(activityId);
+    rows.forEach(row => insert.run(...row));
+  })();
+  return rows.length;
+}
 function getActivityRouteFromSource(id, maxPoints = 1200) {
   const row = db.prepare('SELECT points_json, source_format FROM activity_routes WHERE activity_id = ?').get(id);
   if (!row) return null;
@@ -345,4 +379,4 @@ function getActivityRouteFromSource(id, maxPoints = 1200) {
   return { observed_point_count: points.length, source_format: row.source_format, points: points.filter((_, index) => index % step === 0) };
 }
 
-module.exports = { db, init, listActivities, findAthlete, getAthleteLearningProfile, findDuplicate, insertActivity, setStoredPath, deleteActivity, listPendingActivities, listActivitiesWithoutMessages, recordNormalization, replaceMessages, getActivityDetail, getActivityAnalysisContext, getActivityRoute, getActivityRouteFromSource, compareActivities, getStravaConnection, saveStravaConnection, updateStravaTokens, setStravaSyncAt, disconnectStrava, upsertStravaActivity };
+module.exports = { db, init, listActivities, findAthlete, getAthleteLearningProfile, findDuplicate, insertActivity, setStoredPath, deleteActivity, listPendingActivities, listActivitiesWithoutMessages, recordNormalization, replaceMessages, getActivityDetail, getActivityAnalysisContext, getActivityRoute, getActivityRouteFromSource, compareActivities, getStravaConnection, saveStravaConnection, updateStravaTokens, setStravaSyncAt, disconnectStrava, upsertStravaActivity, hasActivityRecords, replaceStravaStreams };

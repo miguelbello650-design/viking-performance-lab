@@ -309,6 +309,14 @@ async function syncStrava(mode = 'incremental') {
           sub_sport: activity.sport_type || activity.type || null
         };
         const result = db.upsertStravaActivity({ athleteId: db.findAthlete('Miguel Bello').id, stravaActivityId: activity.id, name: activity.name, sport: mapStravaSport(activity), kind: mapStravaKind(activity), startDate: activity.start_date, fields, routePoints: decodePolyline(activity.map?.polyline || activity.map?.summary_polyline) });
+        if (!db.hasActivityRecords(result.id)) {
+          try {
+            const streamQuery = new URLSearchParams({ keys: 'time,distance,altitude,velocity_smooth,heartrate,cadence,watts', key_by_type: 'true' });
+            const streams = await stravaRequest(`${STRAVA_API_BASE}/activities/${activity.id}/streams?${streamQuery}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+            const recordsStored = db.replaceStravaStreams(result.id, streams, activity.start_date);
+            if (!recordsStored) warnings.push(`Actividad ${activity.id}: Strava no devolvió streams detallados.`);
+          } catch (streamError) { warnings.push(`Actividad ${activity.id}: streams no disponibles (${streamError.message}).`); }
+        }
         if (result.created) created += 1; else updated += 1;
       } catch (error) { warnings.push(`Actividad ${activity.id}: ${error.message}`); }
     }
