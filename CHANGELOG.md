@@ -1,6 +1,9 @@
 # Changelog
 
 ## 2026-07-29
+- Creado el perfil de aprendizaje multiatleta en SQLite, con líneas base por disciplina, evidencia, periodo, estado de suficiencia y endpoint `GET /api/athletes/:name/profile`. El asistente incorpora el perfil del atleta seleccionado en su contexto.
+
+## 2026-07-29
 - Definido el autoaprendizaje progresivo del atleta: acumulacion de patrones trazables, confianza y validacion del entrenador, sin reentrenamiento automatico del modelo ni diagnosticos.
 
 ## 2026-07-29

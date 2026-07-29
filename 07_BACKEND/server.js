@@ -468,8 +468,10 @@ function normalizeGeneratedReport(value) {
 }
 
 async function assistantQuery(query, history = [], activityId = null) {
-  const activities = db.compareActivities('Miguel Bello', 20);
   const selectedActivity = activityId ? db.getActivityAnalysisContext(Number(activityId)) : null;
+  const athleteName = selectedActivity?.activity?.athlete || 'Miguel Bello';
+  const activities = db.compareActivities(athleteName, 20);
+  const learningProfile = db.getAthleteLearningProfile(athleteName);
   const unavailable = reason => ({ status: 200, body: {
     query,
     type: 'provider_unavailable',
@@ -483,7 +485,7 @@ async function assistantQuery(query, history = [], activityId = null) {
     coach_review_required: true
   } });
   if (!OPENAI_API_KEY) return unavailable('Configura OPENAI_API_KEY en el backend para activar el chat generativo.');
-  const context = JSON.stringify({ athlete: 'Miguel Bello', activities, selected_activity: selectedActivity });
+  const context = JSON.stringify({ athlete: athleteName, activities, selected_activity: selectedActivity, learning_profile: learningProfile });
   const payload = {
     model: OPENAI_MODEL,
     instructions: ASSISTANT_SYSTEM_PROMPT + ' Responde directamente la pregunta usando el contexto JSON y el historial de conversación.',
@@ -529,6 +531,11 @@ const server = http.createServer(async (req, res) => {
     catch (error) { return json(res, 502, { error: error.message }); }
   }
   if (req.method === 'GET' && url.pathname === '/api/activities') return json(res, 200, { activities: db.listActivities() });
+  const profileMatch = /^\/api\/athletes\/([^/]+)\/profile$/.exec(url.pathname);
+  if (req.method === 'GET' && profileMatch) {
+    const profile = db.getAthleteLearningProfile(decodeURIComponent(profileMatch[1]));
+    return profile ? json(res, 200, profile) : json(res, 404, { error: 'Atleta no encontrado.' });
+  }
   if (req.method === 'GET' && url.pathname === '/api/activities/compare') return json(res, 200, { athlete: url.searchParams.get('athlete') || 'Miguel Bello', activities: db.compareActivities(url.searchParams.get('athlete') || 'Miguel Bello', Number(url.searchParams.get('limit') || 4)) });
   const routeMatch = /^\/api\/activities\/(\d+)\/route$/.exec(url.pathname);
   if (req.method === 'GET' && routeMatch) return json(res, 200, db.getActivityRouteFromSource(Number(routeMatch[1])) || db.getActivityRoute(Number(routeMatch[1])));

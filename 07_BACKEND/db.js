@@ -65,6 +65,11 @@ function init() {
       source_format TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS athlete_learning_profiles (
+      athlete_id INTEGER PRIMARY KEY REFERENCES athletes(id),
+      profile_json TEXT NOT NULL DEFAULT '{}',
+      updated_at TEXT NOT NULL
+    );
   `);
   const activityColumns = db.prepare('PRAGMA table_info(activities)').all().map(column => column.name);
   if (!activityColumns.includes('source_provider')) db.exec("ALTER TABLE activities ADD COLUMN source_provider TEXT NOT NULL DEFAULT 'file'");
@@ -91,6 +96,41 @@ function listActivities() {
 }
 
 function findAthlete(name) { return db.prepare('SELECT id FROM athletes WHERE name = ?').get(name); }
+function getAthleteLearningProfile(name) {
+  const athlete = db.prepare('SELECT id, name, created_at FROM athletes WHERE name = ?').get(name);
+  if (!athlete) return null;
+  const baselines = db.prepare(`
+    SELECT sport, COUNT(*) AS activities,
+           MIN(json_extract(n.observed_json, '$.start_time.value')) AS first_activity,
+           MAX(json_extract(n.observed_json, '$.start_time.value')) AS last_activity,
+           AVG(json_extract(n.observed_json, '$.total_distance.value')) AS avg_distance_m,
+           AVG(json_extract(n.observed_json, '$.total_ascent.value')) AS avg_ascent_m,
+           AVG(json_extract(n.observed_json, '$.avg_speed.value')) AS avg_speed_mps,
+           AVG(json_extract(n.observed_json, '$.avg_heart_rate.value')) AS avg_heart_rate_bpm,
+           AVG(json_extract(n.observed_json, '$.avg_cadence.value')) AS avg_cadence_rpm
+    FROM activities a JOIN activity_normalization n ON n.activity_id = a.id
+    WHERE a.athlete_id = ? AND a.normalization_status = 'normalized'
+    GROUP BY sport ORDER BY activities DESC
+  `).all(athlete.id).map(row => ({
+    discipline: row.sport,
+    evidence_count: row.activities,
+    period: { first: row.first_activity, last: row.last_activity },
+    observed_baseline: {
+      average_distance_m: row.avg_distance_m,
+      average_ascent_m: row.avg_ascent_m,
+      average_speed_mps: row.avg_speed_mps,
+      average_heart_rate_bpm: row.avg_heart_rate_bpm,
+      average_cadence_rpm: row.avg_cadence_rpm
+    },
+    status: row.activities >= 3 ? 'usable_baseline' : 'insufficient_history',
+    limitation: 'Linea base observada; no equivale a una capacidad, diagnostico ni recomendacion.'
+  }));
+  const profile = { athlete: athlete.name, learning_version: 1, updated_at: new Date().toISOString(), baselines };
+  db.prepare(`INSERT INTO athlete_learning_profiles (athlete_id, profile_json, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(athlete_id) DO UPDATE SET profile_json = excluded.profile_json, updated_at = excluded.updated_at`)
+    .run(athlete.id, JSON.stringify(profile), profile.updated_at);
+  return { ...profile, athlete_id: athlete.id };
+}
 function findDuplicate(sha256) { return db.prepare('SELECT id, original_filename FROM activities WHERE sha256 = ?').get(sha256); }
 
 function insertActivity(data) {
@@ -305,4 +345,4 @@ function getActivityRouteFromSource(id, maxPoints = 1200) {
   return { observed_point_count: points.length, source_format: row.source_format, points: points.filter((_, index) => index % step === 0) };
 }
 
-module.exports = { db, init, listActivities, findAthlete, findDuplicate, insertActivity, setStoredPath, deleteActivity, listPendingActivities, listActivitiesWithoutMessages, recordNormalization, replaceMessages, getActivityDetail, getActivityAnalysisContext, getActivityRoute, getActivityRouteFromSource, compareActivities, getStravaConnection, saveStravaConnection, updateStravaTokens, setStravaSyncAt, disconnectStrava, upsertStravaActivity };
+module.exports = { db, init, listActivities, findAthlete, getAthleteLearningProfile, findDuplicate, insertActivity, setStoredPath, deleteActivity, listPendingActivities, listActivitiesWithoutMessages, recordNormalization, replaceMessages, getActivityDetail, getActivityAnalysisContext, getActivityRoute, getActivityRouteFromSource, compareActivities, getStravaConnection, saveStravaConnection, updateStravaTokens, setStravaSyncAt, disconnectStrava, upsertStravaActivity };
