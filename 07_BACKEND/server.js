@@ -48,6 +48,7 @@ const ASSISTANT_SYSTEM_PROMPT = [
   'En informes de actividad incluye calculations como arreglo de textos: solo cálculos derivados verificables (por ejemplo ritmo por segmento, variación porcentual o diferencia entre tramos) y, si faltan registros suficientes, indica que no es calculable. Las capas interpretation, hypothesis y recommendation deben ser texto, nunca objetos.',
   'Tu trabajo no es repetir el tablero. Conecta los datos y los cambios derivados para explicar qué ocurrió, por qué podría haber ocurrido y qué debería revisar el entrenador. Prioriza hallazgos accionables: salida, sostenimiento del esfuerzo, desaceleración, respuesta cardíaca, cadencia, ascensos, descensos y diferencias frente al historial. Cada afirmación debe citar o poder rastrearse a una evidencia o cálculo recibido.',
   'Usa los patrones aprendidos como contexto personal del atleta: los candidatos solo pueden expresarse como hipotesis y los confirmados pueden orientar una recomendacion, siempre sujetos a revision del entrenador.',
+  'Usa la linea base historica solo como descripcion del historial recibido: informa cantidad de muestras, promedio y rango antes de comparar; no la conviertas en objetivo universal ni en diagnostico.',
 ].join(' ');
 
 function json(res, status, payload) {
@@ -507,6 +508,38 @@ function normalizeGeneratedReport(value) {
   };
 }
 
+function buildHistoricalBaseline(activities) {
+  const metrics = {
+    distance_m: 'distance_m',
+    duration_seconds: 'duration_seconds',
+    average_speed_mps: 'average_speed_mps',
+    average_heart_rate_bpm: 'average_heart_rate_bpm',
+    ascent_m: 'ascent_m'
+  };
+  const summarize = rows => {
+    const result = { activity_count: rows.length, metrics: {} };
+    for (const [name, key] of Object.entries(metrics)) {
+      const values = rows.map(row => Number(row.observed?.[key]?.value)).filter(Number.isFinite);
+      if (!values.length) continue;
+      result.metrics[name] = {
+        samples: values.length,
+        mean: values.reduce((sum, value) => sum + value, 0) / values.length,
+        min: Math.min(...values),
+        max: Math.max(...values)
+      };
+    }
+    const dates = rows.map(row => row.observed?.start_time?.value).filter(Boolean).sort();
+    result.period = dates.length ? { first: dates[0], last: dates[dates.length - 1] } : null;
+    return result;
+  };
+  const grouped = new Map();
+  for (const activity of activities) {
+    if (!grouped.has(activity.sport)) grouped.set(activity.sport, []);
+    grouped.get(activity.sport).push(activity);
+  }
+  return Object.fromEntries([...grouped.entries()].map(([sport, rows]) => [sport, summarize(rows)]));
+}
+
 async function assistantQuery(query, history = [], activityId = null) {
   const selectedActivity = activityId ? db.getActivityAnalysisContext(Number(activityId)) : null;
   const athleteName = selectedActivity?.activity?.athlete || 'Miguel Bello';
@@ -515,6 +548,7 @@ async function assistantQuery(query, history = [], activityId = null) {
   const learningProfile = db.getAthleteLearningProfile(athleteName);
   const learningPatterns = db.refreshAthleteLearningPatterns(athleteName)
     .filter(pattern => !comparisonSport || pattern.discipline === comparisonSport);
+  const historicalBaseline = buildHistoricalBaseline(activities);
   const reportKey = 'activity_report_v1';
   const cachedReport = selectedActivity && db.getAiActivityReport(Number(activityId), reportKey);
   if (cachedReport) return { status: 200, body: { query, type: 'generated_activity_report', provider: 'openai', activity_id: Number(activityId), ...cachedReport, evidence: [selectedActivity], coach_review_required: true } };
@@ -531,7 +565,7 @@ async function assistantQuery(query, history = [], activityId = null) {
     coach_review_required: true
   } });
   if (!OPENAI_API_KEY) return unavailable('Configura OPENAI_API_KEY en el backend para activar el chat generativo.');
-  const context = JSON.stringify({ athlete: athleteName, comparison_scope: comparisonSport || 'all_disciplines', activities, selected_activity: selectedActivity, learning_profile: learningProfile, learning_patterns: learningPatterns });
+  const context = JSON.stringify({ athlete: athleteName, comparison_scope: comparisonSport || 'all_disciplines', activities, historical_baseline: historicalBaseline, selected_activity: selectedActivity, learning_profile: learningProfile, learning_patterns: learningPatterns });
   const payload = {
     model: OPENAI_MODEL,
     instructions: ASSISTANT_SYSTEM_PROMPT + ' Responde directamente la pregunta usando el contexto JSON y el historial de conversación.',

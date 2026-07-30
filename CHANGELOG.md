@@ -133,3 +133,4 @@
 - Ajustado el contexto de comparación del motor de IA para no mezclar disciplinas al analizar una actividad seleccionada.
 - Aislados también los patrones aprendidos por categoría dentro del contexto de una actividad.
 - Añadido análisis determinista en cinco segmentos para que la IA pueda localizar cambios de velocidad, frecuencia cardiaca, cadencia y altitud dentro de una actividad.
+- Añadida línea base histórica descriptiva por categoría para comparar actividades con el historial disponible.
