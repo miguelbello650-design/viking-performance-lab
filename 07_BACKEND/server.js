@@ -44,11 +44,12 @@ const ASSISTANT_SYSTEM_PROMPT = [
   'No diagnostiques fatiga, enfermedad, lesión ni estado médico. No ordenes modificar un plan; cualquier recomendación es una propuesta sujeta a revisión del entrenador.',
   'No rechaces una pregunta solo porque no exista una regla analítica específica. Responde con la evidencia disponible o declara insuficiencia.',
   'Responde primero de forma directa y luego separa evidencia, cálculos, interpretación, hipótesis, limitaciones y recomendación cuando corresponda.',
-  'Devuelve únicamente JSON válido con las claves answer, interpretation, hypothesis, recommendation y limitation.',
+  'Devuelve únicamente JSON válido con las claves answer, interpretation, hypothesis, recommendation, limitation, confidence y evidence_refs.',
   'En informes de actividad incluye calculations como arreglo de textos: solo cálculos derivados verificables (por ejemplo ritmo por segmento, variación porcentual o diferencia entre tramos) y, si faltan registros suficientes, indica que no es calculable. Las capas interpretation, hypothesis y recommendation deben ser texto, nunca objetos.',
   'Tu trabajo no es repetir el tablero. Conecta los datos y los cambios derivados para explicar qué ocurrió, por qué podría haber ocurrido y qué debería revisar el entrenador. Prioriza hallazgos accionables: salida, sostenimiento del esfuerzo, desaceleración, respuesta cardíaca, cadencia, ascensos, descensos y diferencias frente al historial. Cada afirmación debe citar o poder rastrearse a una evidencia o cálculo recibido.',
   'Usa los patrones aprendidos como contexto personal del atleta: los candidatos solo pueden expresarse como hipotesis y los confirmados pueden orientar una recomendacion, siempre sujetos a revision del entrenador.',
   'Usa la linea base historica solo como descripcion del historial recibido: informa cantidad de muestras, promedio y rango antes de comparar; no la conviertas en objetivo universal ni en diagnostico.',
+  'confidence debe ser exactamente alta, media o limitada y reflejar la suficiencia real de los datos. evidence_refs debe ser un arreglo breve de referencias como segmento_1, historial_Run o sesion_actual. No cites fuentes que no estén en el contexto.',
 ].join(' ');
 
 function json(res, status, payload) {
@@ -504,7 +505,9 @@ function normalizeGeneratedReport(value) {
     interpretation: readableLayer(generated.interpretation),
     hypothesis: readableLayer(generated.hypothesis),
     recommendation: readableLayer(generated.recommendation),
-    limitation: readableLayer(generated.limitation)
+    limitation: readableLayer(generated.limitation),
+    confidence: readableLayer(generated.confidence) || 'limitada',
+    evidence_refs: Array.isArray(generated.evidence_refs) ? generated.evidence_refs.map(readableLayer).filter(Boolean) : []
   };
 }
 
@@ -549,9 +552,21 @@ async function assistantQuery(query, history = [], activityId = null) {
   const learningPatterns = db.refreshAthleteLearningPatterns(athleteName)
     .filter(pattern => !comparisonSport || pattern.discipline === comparisonSport);
   const historicalBaseline = buildHistoricalBaseline(activities);
+  const evidenceSummary = selectedActivity ? {
+    current_session: {
+      record_count: selectedActivity.record_count,
+      records_sampled: selectedActivity.records_sampled,
+      laps: selectedActivity.laps.length,
+      events: selectedActivity.events.length,
+      segment_count: selectedActivity.derived?.segments?.length || 0,
+      available_fields: Object.keys(selectedActivity.session?.fields || {})
+    },
+    comparison_activity_count: activities.length,
+    comparison_scope: comparisonSport || 'all_disciplines'
+  } : { comparison_activity_count: activities.length, comparison_scope: 'all_disciplines' };
   const reportKey = 'activity_report_v1';
   const cachedReport = selectedActivity && db.getAiActivityReport(Number(activityId), reportKey);
-  if (cachedReport) return { status: 200, body: { query, type: 'generated_activity_report', provider: 'openai', activity_id: Number(activityId), ...cachedReport, evidence: [selectedActivity], coach_review_required: true } };
+  if (cachedReport) return { status: 200, body: { query, type: 'generated_activity_report', provider: 'openai', activity_id: Number(activityId), ...cachedReport, ...normalizeGeneratedReport(cachedReport), evidence: [selectedActivity], coach_review_required: true } };
   const unavailable = reason => ({ status: 200, body: {
     query,
     type: 'provider_unavailable',
@@ -565,7 +580,7 @@ async function assistantQuery(query, history = [], activityId = null) {
     coach_review_required: true
   } });
   if (!OPENAI_API_KEY) return unavailable('Configura OPENAI_API_KEY en el backend para activar el chat generativo.');
-  const context = JSON.stringify({ athlete: athleteName, comparison_scope: comparisonSport || 'all_disciplines', activities, historical_baseline: historicalBaseline, selected_activity: selectedActivity, learning_profile: learningProfile, learning_patterns: learningPatterns });
+  const context = JSON.stringify({ athlete: athleteName, comparison_scope: comparisonSport || 'all_disciplines', evidence_summary: evidenceSummary, activities, historical_baseline: historicalBaseline, selected_activity: selectedActivity, learning_profile: learningProfile, learning_patterns: learningPatterns });
   const payload = {
     model: OPENAI_MODEL,
     instructions: ASSISTANT_SYSTEM_PROMPT + ' Responde directamente la pregunta usando el contexto JSON y el historial de conversación.',

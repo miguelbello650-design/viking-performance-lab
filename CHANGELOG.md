@@ -134,3 +134,4 @@
 - Aislados también los patrones aprendidos por categoría dentro del contexto de una actividad.
 - Añadido análisis determinista en cinco segmentos para que la IA pueda localizar cambios de velocidad, frecuencia cardiaca, cadencia y altitud dentro de una actividad.
 - Añadida línea base histórica descriptiva por categoría para comparar actividades con el historial disponible.
+- Añadida trazabilidad del informe IA mediante nivel de confianza y referencias breves de evidencia.

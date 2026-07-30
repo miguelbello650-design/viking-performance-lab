@@ -18,6 +18,8 @@ El contexto de una actividad incorpora cinco segmentos analíticos ordenados por
 
 El motor también recibe una línea base histórica descriptiva por categoría: cantidad de actividades, promedio, mínimo, máximo y periodo de las métricas disponibles. La IA debe usarla como contexto de comparación, no como objetivo universal.
 
+El motor exige al modelo un nivel de confianza (`alta`, `media` o `limitada`) y referencias breves de evidencia. El backend conserva compatibilidad con informes anteriores y asigna confianza limitada cuando el informe almacenado no la incluía.
+
 Se incorpora como direccion aprobada el autoaprendizaje progresivo del atleta: perfil individual basado en patrones repetidos, confianza y validacion del entrenador. No se reentrena OpenAI automaticamente ni se presentan hipotesis como hechos.
 
 El contexto de análisis de actividad ahora incluye señales derivadas verificables: comparación del primer y último 20% de registros, cambios de velocidad, frecuencia cardíaca y cadencia, además de ascenso y descenso calculados desde la altitud observada. La IA debe convertirlas en hallazgos y preguntas útiles para el entrenador, no repetir el tablero.
